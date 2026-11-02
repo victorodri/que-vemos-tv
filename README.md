@@ -21,7 +21,7 @@ Sin las variables de Redis, en local los perfiles se guardan en `.data/store.jso
 
 ## Desplegar en Vercel (gratis)
 
-1. En [vercel.com/new](https://vercel.com/new) importa el repositorio de GitHub `que-vemos` (framework: Next.js, sin cambiar nada).
+1. En [vercel.com/new](https://vercel.com/new) importa el repositorio de GitHub `victorodri/que-vemos-tv` (framework: Next.js, sin cambiar nada).
 2. **Settings → Environment Variables**: añade `TMDB_API_KEY` (Production, Preview y Development).
 3. **Storage → Create Database → Upstash (Redis)** → plan gratuito → conéctala al proyecto. Vercel añade solo `KV_REST_API_URL` y `KV_REST_API_TOKEN`.
 4. **Deployments → Redeploy** para que coja las variables.

@@ -59,7 +59,12 @@ function toTitle(raw: any, type: MediaType): Title {
   };
 }
 
-const cleanProviderName = (n: string) => n.replace(/\s+(Standard\s+)?with Ads$/i, "").trim();
+// "Netflix Standard with Ads" → "Netflix", "HBO Max Amazon Channel" → "HBO Max": así se agrupan duplicados.
+const cleanProviderName = (n: string) =>
+  n
+    .replace(/\s+(Standard\s+)?with Ads$/i, "")
+    .replace(/\s+(Amazon|Apple TV|Prime Video)\s+Channel$/i, "")
+    .trim();
 
 function parseProviders(wp: any): { providers: Provider[]; rentOrBuy: boolean; link: string | null } {
   const es = wp?.results?.[REGION];

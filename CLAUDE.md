@@ -10,7 +10,7 @@ Esta versión de Next tiene cambios incompatibles con versiones antiguas: consul
 - `npm run build` compila y comprueba tipos. Ejecútalo siempre antes de hacer commit.
 
 ## Despliegue
-- El repo está en GitHub (`victorodri/que-vemos`) y conectado a Vercel: **cada push a `main` despliega producción**. Para «actualizar la app» basta con commit + push, después de que el build pase.
+- El repo está en GitHub (`victorodri/que-vemos-tv`) y conectado a Vercel: **cada push a `main` despliega producción**. Para «actualizar la app» basta con commit + push, después de que el build pase.
 - Las ramas distintas de `main` generan una URL de preview en Vercel; úsalas para cambios grandes.
 - Variables de entorno (en Vercel → Settings → Environment Variables, y en `.env.local` en local):
   - `TMDB_API_KEY`: API key v3 o token v4 de TMDB. **Nunca la escribas en el código ni la subas al repo.**
