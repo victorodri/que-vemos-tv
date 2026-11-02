@@ -224,7 +224,8 @@ export async function getRegionProviders(): Promise<Provider[]> {
   );
   const byId = new Map<number, { p: Provider; prio: number }>();
   for (const r of [...movie.results, ...tv.results]) {
-    if (/with ads|channel/i.test(r.provider_name)) continue;
+    // Fuera variantes con anuncios, canales de Amazon/Apple, tiendas de alquiler/compra y servicios de JustWatch.
+    if (/with ads|channel|store|justwatch|google play|youtube|microsoft/i.test(r.provider_name)) continue;
     const prio = r.display_priorities?.[REGION] ?? 999;
     const prev = byId.get(r.provider_id);
     if (!prev || prio < prev.prio) {
