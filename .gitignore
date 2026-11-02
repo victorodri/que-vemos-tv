@@ -17,3 +17,6 @@ android/local.properties
 *.p12
 *.jks
 *.keystore
+.vercel
+.env*
+!.env.example
