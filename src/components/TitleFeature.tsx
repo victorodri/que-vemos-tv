@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { formatRuntime, getJSON } from "@/lib/client";
+import type { Signal } from "@/lib/reco/types";
 import type { MediaType, SavedTitle, Title, TitleDetail } from "@/lib/types";
 import { focusFirst } from "./spatialNav";
 import { useProfile } from "./profileContext";
@@ -30,10 +31,41 @@ export function TitleFeature({ title, children }: { title: TitleDetail | Title |
           <div className="feature-providers">
             <ProviderList providers={t.providers} rentOrBuy={t.rentOrBuy} withNames max={8} />
           </div>
-          <div className="actions">{children}</div>
+          <div className="actions feature-actions">{children}</div>
         </div>
       </div>
     </article>
+  );
+}
+
+export const SIGNALS: { s: Signal; icon: string; label: string }[] = [
+  { s: "love", icon: "❤️", label: "Me encanta" },
+  { s: "like", icon: "👍", label: "Me gusta" },
+  { s: "dislike", icon: "👎", label: "No me gusta" },
+  { s: "not_interested", icon: "🚫", label: "No me interesa" },
+];
+
+/** Fila «Me encanta / Me gusta / No me gusta / No me interesa». Entrena el modelo de gustos del perfil. */
+export function FeedbackButtons({ title, onRated }: { title: Title | SavedTitle; onRated?: (signal: Signal | null) => void }) {
+  const profile = useProfile();
+  const current = profile.feedbackOf(title);
+  return (
+    <div className="feedback" role="group" aria-label="Tu valoración">
+      {SIGNALS.map((o) => (
+        <button
+          key={o.s}
+          className="btn btn--feedback"
+          aria-pressed={current === o.s}
+          onClick={() => {
+            const next = current === o.s ? null : o.s;
+            profile.rate(title, o.s);
+            onRated?.(next);
+          }}
+        >
+          <span aria-hidden="true">{o.icon}</span> {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -86,6 +118,7 @@ export function DetailModal({ target, onClose }: { target: { type: MediaType; id
             ← Volver
           </button>
           <ProfileActions title={shown} />
+          <FeedbackButtons title={shown} />
           {error && <p className="error">{error}</p>}
         </TitleFeature>
       ) : (

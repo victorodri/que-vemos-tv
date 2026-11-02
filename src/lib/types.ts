@@ -1,4 +1,5 @@
 import type { Prefs } from "./prefs";
+import type { FeedbackEntry } from "./reco/types";
 
 export type MediaType = "movie" | "tv";
 
@@ -53,6 +54,8 @@ export interface ProfileData {
   lastFilters: Filters | null;
   /** null hasta que el perfil completa el cuestionario inicial. */
   prefs: Prefs | null;
+  /** Valoraciones explícitas: clave "movie:123" → me encanta / me gusta / no me gusta / no me interesa. */
+  feedback: Record<string, FeedbackEntry>;
 }
 
 export interface Genre {

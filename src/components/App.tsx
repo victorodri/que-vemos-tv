@@ -3,12 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROFILES, isProfileId, type ProfileId } from "@/config/profiles";
 import { DEFAULT_FILTERS } from "@/lib/filters";
 import type { Prefs } from "@/lib/prefs";
+import type { ImplicitEvent, Signal } from "@/lib/reco/types";
 import { getJSON, toSaved } from "@/lib/client";
 import { titleKey, type Filters, type MediaType, type Meta, type ProfileData, type SavedTitle, type Title } from "@/lib/types";
 import { ForYouView } from "./ForYouView";
 import { ListView } from "./ListView";
 import { ProfilePicker } from "./ProfilePicker";
-import { Questionnaire } from "./Questionnaire";
+import { Questionnaire, type QuizRatings } from "./Questionnaire";
 import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
@@ -121,8 +122,31 @@ export default function App() {
     setProfile((p) => (p ? { ...p, data: fn(p.data) } : p));
   }, []);
 
+  // Envía una señal al motor de recomendación. Las valoraciones solo se guardan por esta vía (el PUT del
+  // perfil no las toca) y van en cola, una detrás de otra, para que el servidor nunca pierda ninguna.
+  const feedbackQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const postFeedback = useCallback((body: object) => {
+    const send = () =>
+      fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(
+        () => {},
+      );
+    feedbackQueue.current = feedbackQueue.current.then(send);
+  }, []);
+  const sendFeedback = useCallback(
+    (id: ProfileId, t: Title | SavedTitle, body: { signal?: Signal | null; event?: ImplicitEvent }) => {
+      const payload = { profile: id, key: titleKey(t), item: toSaved(t), ...body };
+      // Los eventos implícitos no necesitan orden: salen al momento.
+      if (body.event) fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), keepalive: true }).catch(() => {});
+      else postFeedback(payload);
+    },
+    [postFeedback],
+  );
+
   const api = useMemo<ProfileApi | null>(() => {
     if (!profile) return null;
+    const id = profile.id;
+    const fb = profile.data.feedback ?? {};
+    const track = (t: Title | SavedTitle, event: ImplicitEvent) => sendFeedback(id, t, { event });
     const seen = new Set(profile.data.seen);
     const listed = new Set(profile.data.watchlist.map(titleKey));
     return {
@@ -130,23 +154,40 @@ export default function App() {
       data: profile.data,
       inList: (t) => listed.has(titleKey(t)),
       isSeen: (t) => seen.has(titleKey(t)),
-      toggleList: (t) =>
+      toggleList: (t) => {
+        track(t, listed.has(titleKey(t)) ? "unwant" : "want");
         update((d) => {
           const k = titleKey(t);
           return d.watchlist.some((w) => titleKey(w) === k)
             ? { ...d, watchlist: d.watchlist.filter((w) => titleKey(w) !== k) }
             : { ...d, watchlist: [...d.watchlist, toSaved(t)] };
-        }),
-      toggleSeen: (t) =>
+        });
+      },
+      toggleSeen: (t) => {
+        track(t, seen.has(titleKey(t)) ? "unseen" : "seen");
         update((d) => {
           const k = titleKey(t);
           return d.seen.includes(k) ? { ...d, seen: d.seen.filter((s) => s !== k) } : { ...d, seen: [...d.seen, k] };
-        }),
+        });
+      },
       setPlatforms: (platforms) => update((d) => ({ ...d, platforms })),
       clearSeen: () => update((d) => ({ ...d, seen: [] })),
       setLastFilters: (lastFilters) => update((d) => ({ ...d, lastFilters })),
+      feedbackOf: (t) => fb[titleKey(t)]?.s,
+      rate: (t, signal) => {
+        const k = titleKey(t);
+        const next = signal && fb[k]?.s !== signal ? signal : null;
+        sendFeedback(id, t, { signal: next });
+        update((d) => {
+          const feedback = { ...(d.feedback ?? {}) };
+          if (next) feedback[k] = { s: next, t: Date.now() };
+          else delete feedback[k];
+          return { ...d, feedback };
+        });
+      },
+      track,
     };
-  }, [profile, update]);
+  }, [profile, update, sendFeedback]);
 
   const setFilters = (f: Filters) => {
     setFiltersState(f);
@@ -164,12 +205,18 @@ export default function App() {
   };
 
   // Al terminar el cuestionario se guarda al momento: las recomendaciones las calcula el servidor con estos gustos.
-  const finishQuiz = (prefs: Prefs, platforms: number[]) => {
+  const finishQuiz = (prefs: Prefs, platforms: number[], ratings: QuizRatings) => {
     if (!profile) return;
     const f: Filters = { ...DEFAULT_FILTERS, type: prefs.types[0], onlyMine: platforms.length > 0 };
-    const next = { ...profile, data: { ...profile.data, prefs, platforms, lastFilters: f } };
+    const feedback = { ...(profile.data.feedback ?? {}) };
+    const now = Date.now();
+    for (const [k, r] of Object.entries(ratings)) feedback[k] = { s: r.signal, t: now };
+    const next = { ...profile, data: { ...profile.data, prefs, platforms, lastFilters: f, feedback } };
     setProfile(next);
     save(next);
+    // Las valoraciones del onboarding van al motor en un único lote para que entrene desde el primer momento.
+    const batch = Object.entries(ratings).map(([key, r]) => ({ key, signal: r.signal }));
+    if (batch.length) postFeedback({ profile: profile.id, batch });
     setFiltersState(f);
     setRedoQuiz(false);
     replace({ ...nav, tab: "foryou", detail: null });
@@ -177,6 +224,7 @@ export default function App() {
 
   const openDetail = (t: Title | SavedTitle) => {
     openerRef.current = document.activeElement as HTMLElement | null;
+    api?.track(t, "open");
     push({ ...nav, detail: { type: t.type, id: t.id, preview: t } });
   };
 
@@ -206,11 +254,13 @@ export default function App() {
     return (
       <Questionnaire
         key={`${api.id}:${redoQuiz}`}
+        profileId={api.id}
         name={current.name}
         pareja={api.id === "pareja"}
         meta={meta}
         initial={api.data.prefs}
         initialPlatforms={api.data.platforms}
+        initialFeedback={api.data.feedback ?? {}}
         onDone={finishQuiz}
         onCancel={api.data.prefs ? () => setRedoQuiz(false) : undefined}
       />

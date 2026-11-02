@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isProfileId } from "@/config/profiles";
 import { errorResponse } from "@/lib/api";
 import { sanitizePrefs } from "@/lib/prefs";
+import { hashOf } from "@/lib/client";
+import { DEFAULT_FILTERS, filtersToParams, paramsToFilters } from "@/lib/filters";
+import { coupleRetrainAfter, retrain } from "@/lib/reco/model";
 import { emptyProfile, getProfile, saveProfile } from "@/lib/store";
 import type { ProfileData } from "@/lib/types";
 
@@ -29,8 +32,9 @@ function sanitize(body: Partial<ProfileData>): ProfileData {
       : base.watchlist,
     seen: Array.isArray(body.seen) ? body.seen.filter((k) => /^(movie|tv):\d+$/.test(k)).slice(0, LIMIT * 5) : base.seen,
     platforms: Array.isArray(body.platforms) ? body.platforms.filter(Number.isInteger).slice(0, 50) : base.platforms,
-    lastFilters: body.lastFilters ?? null,
+    lastFilters: body.lastFilters && typeof body.lastFilters === "object" ? paramsToFilters(filtersToParams({ ...DEFAULT_FILTERS, ...body.lastFilters })) : null,
     prefs: sanitizePrefs(body.prefs),
+    feedback: {}, // las valoraciones solo se escriben por /api/feedback
   };
 }
 
@@ -49,8 +53,16 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/profile/[id]">) 
   if (!isProfileId(id)) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
   try {
     const data = sanitize(await req.json());
+    const prev = await getProfile(id);
     await saveProfile(id, data);
-    return NextResponse.json(data);
+    // Solo lista, vistos, gustos y plataformas entrenan el modelo: cambiar filtros no lo reentrena
+    // (ni invalida la caché de «Para ti»).
+    const trainingInputs = (p: ProfileData) => hashOf([p.watchlist.map((t) => `${t.type}:${t.id}`), p.seen, p.prefs, p.platforms]);
+    if (trainingInputs(prev) !== trainingInputs(data)) {
+      after(() => retrain(id).catch((e) => console.error("retrain", e)));
+      coupleRetrainAfter(id, after);
+    }
+    return NextResponse.json({ ...data, feedback: prev.feedback });
   } catch (err) {
     return errorResponse(err);
   }

@@ -4,7 +4,7 @@ import { prefsToDiscover, type Prefs } from "./prefs";
 import type { Filters, Genre, MediaType, Provider, Title, TitleDetail } from "./types";
 
 const BASE = "https://api.themoviedb.org/3";
-const IMG = "https://image.tmdb.org/t/p/";
+export const IMG = "https://image.tmdb.org/t/p/";
 const REGION = "ES";
 const LANG = "es-ES";
 const HOUR = 3600;
@@ -21,7 +21,7 @@ export class TmdbError extends Error {
 
 type Params = Record<string, string | number | null | undefined>;
 
-async function tmdb<T>(path: string, params: Params = {}, revalidate = HOUR): Promise<T> {
+export async function tmdb<T>(path: string, params: Params = {}, revalidate = HOUR): Promise<T> {
   const key = process.env.TMDB_API_KEY?.trim();
   if (!key) throw new TmdbError(500, "Falta la variable de entorno TMDB_API_KEY");
 
@@ -45,7 +45,7 @@ async function tmdb<T>(path: string, params: Params = {}, revalidate = HOUR): Pr
 // ---------- Normalización ----------
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function toTitle(raw: any, type: MediaType): Title {
+export function toTitle(raw: any, type: MediaType): Title {
   const date: string | undefined = type === "movie" ? raw.release_date : raw.first_air_date;
   return {
     id: raw.id,
@@ -67,7 +67,7 @@ const cleanProviderName = (n: string) =>
     .replace(/\s+(Amazon|Apple TV|Prime Video)\s+Channel$/i, "")
     .trim();
 
-function parseProviders(wp: any): { providers: Provider[]; rentOrBuy: boolean; link: string | null } {
+export function parseProviders(wp: any): { providers: Provider[]; rentOrBuy: boolean; link: string | null } {
   const es = wp?.results?.[REGION];
   if (!es) return { providers: [], rentOrBuy: false, link: null };
   const seen = new Set<string>();

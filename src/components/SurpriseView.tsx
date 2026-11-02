@@ -6,7 +6,7 @@ import { titleKey, type Filters, type Meta, type TitleDetail } from "@/lib/types
 import { FiltersPanel } from "./FiltersPanel";
 import { useProfile } from "./profileContext";
 import { focusEl } from "./spatialNav";
-import { ProfileActions, TitleFeature } from "./TitleFeature";
+import { FeedbackButtons, ProfileActions, TitleFeature } from "./TitleFeature";
 
 export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; onFilters: (f: Filters) => void; meta: Meta }) {
   const profile = useProfile();
@@ -64,10 +64,20 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
       {message && <p className="empty">{message}</p>}
       {item && (
         <TitleFeature title={item}>
-          <button className="btn btn--primary" ref={againRef} onClick={next} disabled={loading}>
+          <button
+            className="btn btn--primary"
+            ref={againRef}
+            onClick={() => {
+              profile.track(item, "skip");
+              next();
+            }}
+            disabled={loading}
+          >
             {loading ? "Buscando…" : "🎲 Otra"}
           </button>
           <ProfileActions title={item} onSeen={(nowSeen) => nowSeen && next()} />
+          {/* «No me gusta» y «No me interesa» descartan la propuesta y pasan a otra. */}
+          <FeedbackButtons title={item} onRated={(s) => (s === "dislike" || s === "not_interested") && next()} />
         </TitleFeature>
       )}
     </div>
