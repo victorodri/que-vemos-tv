@@ -1,0 +1,101 @@
+"use client";
+import { useEffect, useState } from "react";
+import { formatRuntime, getJSON } from "@/lib/client";
+import type { MediaType, SavedTitle, Title, TitleDetail } from "@/lib/types";
+import { focusFirst } from "./spatialNav";
+import { useProfile } from "./profileContext";
+import { ProviderList } from "./Providers";
+import { Rating } from "./TitleCard";
+
+/** Ficha grande de un título: fondo, póster, datos, plataformas y botones. */
+export function TitleFeature({ title, children }: { title: TitleDetail | Title | SavedTitle; children?: React.ReactNode }) {
+  const t = title as Partial<TitleDetail> & SavedTitle;
+  const runtime = formatRuntime(t.runtime ?? null);
+  return (
+    <article className="feature" style={t.backdrop ? { backgroundImage: `url(${t.backdrop})` } : undefined}>
+      <div className="feature-shade">
+        <div className="feature-poster">{t.poster ? <img src={t.poster} alt="" /> : <span className="poster-fallback">{t.title}</span>}</div>
+        <div className="feature-info">
+          <p className="feature-kind">{t.type === "movie" ? "Película" : "Serie"}</p>
+          <h2 className="feature-title">{t.title}</h2>
+          <p className="feature-meta">
+            <span>{t.year ?? "—"}</span>
+            <Rating value={t.rating} />
+            {runtime && <span>{t.type === "tv" ? `${runtime}/cap.` : runtime}</span>}
+            {t.seasons ? <span>{t.seasons} temporada{t.seasons > 1 ? "s" : ""}</span> : null}
+            {t.genres?.length ? <span>{t.genres.slice(0, 3).join(" · ")}</span> : null}
+          </p>
+          {t.tagline && <p className="feature-tagline">{t.tagline}</p>}
+          <p className="feature-overview">{t.overview || "Sin sinopsis."}</p>
+          <div className="feature-providers">
+            <ProviderList providers={t.providers} rentOrBuy={t.rentOrBuy} withNames max={8} />
+          </div>
+          <div className="actions">{children}</div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** Botones "Quiero verla" y "Ya vista" del perfil activo. */
+export function ProfileActions({ title, onSeen }: { title: Title | SavedTitle; onSeen?: (nowSeen: boolean) => void }) {
+  const profile = useProfile();
+  const inList = profile.inList(title);
+  const seen = profile.isSeen(title);
+  const pareja = profile.id === "pareja";
+  return (
+    <>
+      <button className="btn" onClick={() => profile.toggleList(title)}>
+        {inList ? "✓ En mi lista (quitar)" : "＋ Quiero verla"}
+      </button>
+      <button
+        className="btn"
+        onClick={() => {
+          profile.toggleSeen(title);
+          onSeen?.(!seen);
+        }}
+      >
+        {seen ? "↺ Desmarcar vista" : pareja ? "👁 Ya la hemos visto" : "👁 Ya la he visto"}
+      </button>
+    </>
+  );
+}
+
+export function DetailModal({ target, onClose }: { target: { type: MediaType; id: number; preview?: Title | SavedTitle }; onClose: () => void }) {
+  const [detail, setDetail] = useState<TitleDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getJSON<TitleDetail>(`/api/title/${target.type}/${target.id}`, ctrl.signal)
+      .then(setDetail)
+      .catch((e) => !ctrl.signal.aborted && setError(e.message));
+    return () => ctrl.abort();
+  }, [target.type, target.id]);
+
+  useEffect(() => {
+    requestAnimationFrame(focusFirst);
+  }, []);
+
+  const shown = detail ?? target.preview;
+  return (
+    <div className="modal" data-nav-modal role="dialog" aria-modal="true">
+      {shown ? (
+        <TitleFeature title={shown}>
+          <button className="btn btn--primary" data-autofocus onClick={onClose}>
+            ← Volver
+          </button>
+          <ProfileActions title={shown} />
+          {error && <p className="error">{error}</p>}
+        </TitleFeature>
+      ) : (
+        <div className="modal-loading">
+          {error ? <p className="error">{error}</p> : <p className="loading">Cargando…</p>}
+          <button className="btn" data-autofocus onClick={onClose}>
+            ← Volver
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
