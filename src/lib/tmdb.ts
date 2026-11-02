@@ -1,5 +1,6 @@
 import "server-only";
 import { yearRange } from "./filters";
+import { prefsToDiscover, type Prefs } from "./prefs";
 import type { Filters, Genre, MediaType, Provider, Title, TitleDetail } from "./types";
 
 const BASE = "https://api.themoviedb.org/3";
@@ -104,9 +105,17 @@ const toPage = (raw: RawPage, type: MediaType): Page => ({
   totalResults: raw.total_results,
 });
 
-/** Discover con todos los filtros. Solo devuelve títulos disponibles en streaming en España. */
-export async function discover(f: Filters, page: number, platforms: number[] = []): Promise<Page> {
-  const [from, to] = yearRange(f.year);
+/**
+ * Discover con todos los filtros. Solo devuelve títulos disponibles en streaming en España.
+ * Con `f.taste` y gustos guardados, cada filtro en «Cualquiera» se rellena con los gustos del perfil.
+ */
+export async function discover(f: Filters, page: number, opts: { platforms?: number[]; prefs?: Prefs | null } = {}): Promise<Page> {
+  const platforms = opts.platforms ?? [];
+  const taste = f.taste && opts.prefs ? prefsToDiscover(opts.prefs, f.type) : null;
+  const [yearFrom, to] = yearRange(f.year);
+  const from = f.year ? yearFrom : (taste?.fromYear ?? null);
+  const maxRuntime = f.maxRuntime ?? taste?.maxRuntime ?? null;
+  const hidden = taste?.discovery === "hidden";
   const isMovie = f.type === "movie";
   const dateField = isMovie ? "primary_release_date" : "first_air_date";
   const raw = await tmdb<RawPage>(`/discover/${f.type}`, {
@@ -115,14 +124,17 @@ export async function discover(f: Filters, page: number, platforms: number[] = [
     watch_region: REGION,
     with_watch_monetization_types: "flatrate|free|ads",
     with_watch_providers: platforms.length ? platforms.join("|") : null,
-    with_genres: f.genre,
-    "with_runtime.lte": f.maxRuntime,
-    "with_runtime.gte": f.maxRuntime ? 1 : null, // descarta títulos sin duración conocida
-    "vote_average.gte": f.minRating,
+    with_genres: f.genre ?? (taste?.withGenres.length ? taste.withGenres.join("|") : null),
+    without_genres: taste?.withoutGenres.filter((g) => g !== f.genre).join(",") || null,
+    "with_runtime.lte": maxRuntime,
+    "with_runtime.gte": maxRuntime ? 1 : null, // descarta títulos sin duración conocida
+    "vote_average.gte": f.minRating ?? taste?.minRating ?? null,
     "vote_count.gte": isMovie ? 150 : 50,
+    // «Joyas ocultas»: bien valoradas pero con pocos votos.
+    "vote_count.lte": hidden ? (isMovie ? 2500 : 600) : null,
     [`${dateField}.gte`]: from ? `${from}-01-01` : null,
     [`${dateField}.lte`]: to ? `${to}-12-31` : null,
-    sort_by: "popularity.desc",
+    sort_by: hidden ? "vote_average.desc" : "popularity.desc",
     include_adult: "false",
     page,
   });

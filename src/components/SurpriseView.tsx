@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { filtersToParams } from "@/lib/filters";
-import { getJSON } from "@/lib/client";
+import { getJSON, hashOf } from "@/lib/client";
 import { titleKey, type Filters, type Meta, type TitleDetail } from "@/lib/types";
 import { FiltersPanel } from "./FiltersPanel";
 import { useProfile } from "./profileContext";
@@ -17,11 +17,12 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
   const skip = useRef<string[]>([]);
   const againRef = useRef<HTMLButtonElement>(null);
   const filterKey = filtersToParams({ ...filters, query: "" }).toString();
+  const tasteKey = hashOf([profile.data.platforms, profile.data.prefs]);
 
   // Con filtros nuevos, las propuestas anteriores vuelven a valer.
   useEffect(() => {
     skip.current = [];
-  }, [filterKey]);
+  }, [filterKey, tasteKey]);
 
   async function next() {
     setLoading(true);

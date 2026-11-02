@@ -23,5 +23,16 @@ Esta versión de Next tiene cambios incompatibles con versiones antiguas: consul
 - Navegación con mando: `src/components/spatialNav.ts`. Todo lo interactivo tiene que ser `<button>`, `<input>` o `<a href>` para que las flechas lo encuentren. Lo que tenga `data-autofocus` recibe el foco al abrir una vista; un contenedor con `data-nav-modal` limita la navegación a su interior.
 - El estado de navegación (perfil, pestaña, ficha abierta) vive en `history.state`, así el botón Atrás del mando funciona.
 
+## Cuestionario y recomendaciones
+- `src/lib/prefs.ts`: preguntas → `Prefs` (en `ProfileData.prefs`) y `prefsToDiscover`, que traduce gustos a parámetros de discover. Los géneros del cuestionario son grupos con IDs distintos para pelis y series.
+- `discover` en `src/lib/tmdb.ts` aplica los gustos solo cuando `filters.taste` está activo y el filtro correspondiente está en «Cualquiera»: lo que elige el usuario a mano siempre manda.
+- Si un perfil no tiene `prefs`, `App.tsx` muestra `Questionnaire.tsx` antes que nada.
+
+## App Android TV (`android/`)
+- WebView que carga `BuildConfig.APP_URL`; no contiene lógica de la app. Los cambios de la web **no** requieren nuevo APK.
+- Solo hace falta tocar `android/` para cambiar icono, nombre, URL o el comportamiento del mando. Al hacer push con cambios ahí, GitHub Actions compila y publica una release `apk-vN` (descarga: `/apk` en la web).
+- No hay Android SDK ni Java en el Mac: no intentes compilar en local, usa el workflow (`gh workflow run android.yml`, `gh run watch`).
+- La clave de firma está en `~/.config/que-vemos-tv/` (fuera del repo) y en los secretos del repo. Nunca la subas al repo.
+
 ## Diseño
 Interfaz «10 pies»: textos grandes (rem, con escala por `vw` en `html`), tema oscuro y foco muy visible (anillo amarillo + escala). Respeta los márgenes `--safe-x` / `--safe-y` (overscan de la tele). Comprueba los cambios de UI con el teclado (flechas + Enter + Escape) y en móvil.

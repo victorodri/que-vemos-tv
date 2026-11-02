@@ -1,0 +1,52 @@
+plugins {
+    id "com.android.application"
+}
+
+// URL de la web en Vercel que carga la app. Se puede cambiar al compilar: -PappUrl=https://...
+def appUrl = (project.findProperty("appUrl") ?: "https://que-vemos-tv.vercel.app").toString()
+def buildNumber = (project.findProperty("versionCode") ?: "1").toString().toInteger()
+
+// Firma de release: la pone GitHub Actions desde los secretos del repo. En local, sin ellos, se firma con la clave debug.
+def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+
+android {
+    namespace "es.quevemos.tv"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "es.quevemos.tv"
+        minSdk 22
+        targetSdk 35
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+        buildConfigField "String", "APP_URL", "\"${appUrl}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storeType "pkcs12"
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: "quevemos"
+                keyPassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystorePath ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

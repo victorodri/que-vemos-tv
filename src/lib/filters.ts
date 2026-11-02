@@ -7,6 +7,7 @@ export const DEFAULT_FILTERS: Filters = {
   minRating: null,
   year: null,
   onlyMine: false,
+  taste: true,
   query: "",
 };
 
@@ -72,6 +73,7 @@ export function filtersToParams(f: Filters): URLSearchParams {
   if (f.minRating != null) p.set("rating", String(f.minRating));
   if (f.year) p.set("year", f.year);
   if (f.onlyMine) p.set("mine", "1");
+  if (f.taste) p.set("taste", "1");
   if (f.query.trim()) p.set("q", f.query.trim());
   return p;
 }
@@ -89,6 +91,7 @@ export function paramsToFilters(p: URLSearchParams): Filters {
     minRating: num("rating"),
     year: p.get("year"),
     onlyMine: p.get("mine") === "1",
+    taste: p.get("taste") === "1",
     query: (p.get("q") ?? "").slice(0, 100),
   };
 }

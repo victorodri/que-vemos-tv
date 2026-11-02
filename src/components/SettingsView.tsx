@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Meta } from "@/lib/types";
 import { useProfile } from "./profileContext";
 
-export function SettingsView({ meta }: { meta: Meta }) {
+export function SettingsView({ meta, onRedo }: { meta: Meta; onRedo: () => void }) {
   const profile = useProfile();
   const { platforms, seen } = profile.data;
   const [confirmClear, setConfirmClear] = useState(false);
@@ -21,6 +21,14 @@ export function SettingsView({ meta }: { meta: Meta }) {
             <span>{p.name}</span>
           </button>
         ))}
+      </div>
+
+      <h2>Gustos</h2>
+      <p className="hint">Las recomendaciones de «Para ti» y «Sorpréndeme» salen del cuestionario inicial.</p>
+      <div>
+        <button className="btn" onClick={onRedo}>
+          ✎ Repetir cuestionario
+        </button>
       </div>
 
       <h2>Historial</h2>

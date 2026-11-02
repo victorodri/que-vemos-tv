@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse, profilePlatforms } from "@/lib/api";
+import { errorResponse, loadProfile } from "@/lib/api";
 import { paramsToFilters } from "@/lib/filters";
 import { discover, search, withProviders } from "@/lib/tmdb";
 
@@ -9,8 +9,9 @@ export async function GET(req: NextRequest) {
   const f = paramsToFilters(sp);
   const page = Math.min(Math.max(Number(sp.get("page")) || 1, 1), 500);
   try {
-    const platforms = f.onlyMine ? await profilePlatforms(sp.get("profile")) : [];
-    const result = f.query ? await search(f, page) : await discover(f, page, platforms);
+    const profile = await loadProfile(sp.get("profile"));
+    const platforms = f.onlyMine ? (profile?.platforms ?? []) : [];
+    const result = f.query ? await search(f, page) : await discover(f, page, { platforms, prefs: profile?.prefs });
     let items = await withProviders(result.items);
     if (f.query && platforms.length) {
       items = items.filter((t) => t.providers?.some((p) => platforms.includes(p.id)));

@@ -49,6 +49,17 @@ export function FiltersPanel({ filters, onChange, meta }: { filters: Filters; on
       <Row label="Duración" value={filters.maxRuntime} options={RUNTIME_OPTIONS[filters.type]} onPick={(maxRuntime) => set({ maxRuntime })} />
       <Row label="Nota" value={filters.minRating} options={RATING_OPTIONS} onPick={(minRating) => set({ minRating })} />
       <Row label="Año" value={filters.year} options={YEAR_OPTIONS} onPick={(year) => set({ year })} />
+      {data.prefs && (
+        <Row
+          label="Gustos"
+          value={filters.taste}
+          options={[
+            { value: true, label: "Según mis gustos" },
+            { value: false, label: "Ver de todo" },
+          ]}
+          onPick={(taste) => set({ taste })}
+        />
+      )}
       <Row
         label="Dónde"
         value={filters.onlyMine}

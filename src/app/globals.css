@@ -594,6 +594,122 @@ input:focus {
   gap: 1rem;
 }
 
+/* ---------- Cuestionario inicial ---------- */
+.quiz {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  padding: var(--safe-y) var(--safe-x);
+  text-align: center;
+}
+.quiz-title {
+  font-size: 2.2rem;
+  line-height: 1.15;
+}
+.quiz-hint {
+  color: var(--muted);
+  font-size: 1.15rem;
+  max-width: 40rem;
+}
+.quiz-progress {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.quiz-bar {
+  width: min(28rem, 80vw);
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.quiz-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.quiz-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  max-width: 60rem;
+  margin-top: 0.5rem;
+}
+.quiz-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 13rem;
+  padding: 1.2rem 1.4rem;
+  border-radius: 1.1rem;
+  background: var(--surface);
+  border: 2px solid transparent;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.quiz-options--multi .quiz-option {
+  flex-direction: row;
+  min-width: 0;
+  padding: 0.7rem 1.1rem;
+  font-size: 1.05rem;
+}
+.quiz-option img {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.5rem;
+}
+.quiz-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+.quiz-options--multi .quiz-icon {
+  font-size: 1.4rem;
+}
+.quiz-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.quiz-options--multi .quiz-option[aria-pressed="true"]::after {
+  content: "✓";
+  color: var(--accent);
+  font-weight: 800;
+}
+.quiz-option:focus {
+  transform: scale(1.07);
+  background: var(--surface-2);
+}
+.quiz-nav {
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.foryou-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* En la tele (960 px de ancho en Fire TV) el nombre del perfil no cabe junto a las 5 pestañas. */
+@media (max-width: 1100px) {
+  .who-name {
+    display: none;
+  }
+  .who {
+    padding: 0.35rem;
+  }
+}
+
 /* ---------- Pantallas pequeñas (móvil) ---------- */
 @media (max-width: 760px) {
   html {
@@ -641,6 +757,12 @@ input:focus {
     font-size: 1.6rem;
   }
   .profile {
+    min-width: 9rem;
+  }
+  .quiz-title {
+    font-size: 1.6rem;
+  }
+  .quiz-option {
     min-width: 9rem;
   }
 }

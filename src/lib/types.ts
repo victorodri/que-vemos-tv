@@ -1,3 +1,5 @@
+import type { Prefs } from "./prefs";
+
 export type MediaType = "movie" | "tv";
 
 export interface Filters {
@@ -7,6 +9,8 @@ export interface Filters {
   minRating: number | null;
   year: string | null;
   onlyMine: boolean;
+  /** Aplicar los gustos del cuestionario cuando un filtro está en «Cualquiera». */
+  taste: boolean;
   query: string;
 }
 
@@ -47,6 +51,8 @@ export interface ProfileData {
   seen: string[];
   platforms: number[];
   lastFilters: Filters | null;
+  /** null hasta que el perfil completa el cuestionario inicial. */
+  prefs: Prefs | null;
 }
 
 export interface Genre {

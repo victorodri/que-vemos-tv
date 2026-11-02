@@ -23,3 +23,11 @@ export function formatRuntime(min: number | null) {
   const m = min % 60;
   return h ? `${h} h${m ? ` ${m} min` : ""}` : `${m} min`;
 }
+
+/** Hash corto de un valor, para forzar recargas cuando cambian datos que el servidor lee del perfil. */
+export function hashOf(value: unknown) {
+  const s = JSON.stringify(value) ?? "";
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}

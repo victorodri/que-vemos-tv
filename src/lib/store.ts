@@ -16,7 +16,7 @@ export const storageMode: "redis" | "local" = redis ? "redis" : "local";
 const PREFIX = "quevemos:profile:";
 const FILE = process.env.VERCEL ? path.join(os.tmpdir(), "quevemos-store.json") : path.join(process.cwd(), ".data", "store.json");
 
-export const emptyProfile = (): ProfileData => ({ watchlist: [], seen: [], platforms: [], lastFilters: null });
+export const emptyProfile = (): ProfileData => ({ watchlist: [], seen: [], platforms: [], lastFilters: null, prefs: null });
 
 async function readFile(): Promise<Record<string, ProfileData>> {
   try {

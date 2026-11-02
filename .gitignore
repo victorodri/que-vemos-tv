@@ -8,3 +8,12 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.p12
+*.jks
+*.keystore

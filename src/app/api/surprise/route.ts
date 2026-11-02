@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isProfileId } from "@/config/profiles";
-import { errorResponse } from "@/lib/api";
+import { errorResponse, loadProfile } from "@/lib/api";
 import { paramsToFilters } from "@/lib/filters";
-import { getProfile } from "@/lib/store";
 import { discover, getDetail } from "@/lib/tmdb";
 import { titleKey } from "@/lib/types";
 
@@ -14,13 +12,12 @@ const randInt = (min: number, max: number) => min + Math.floor(Math.random() * (
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const f = { ...paramsToFilters(sp), query: "" };
-  const profileId = sp.get("profile");
   try {
-    const profile = profileId && isProfileId(profileId) ? await getProfile(profileId) : null;
-    const platforms = f.onlyMine ? (profile?.platforms ?? []) : [];
+    const profile = await loadProfile(sp.get("profile"));
+    const opts = { platforms: f.onlyMine ? (profile?.platforms ?? []) : [], prefs: profile?.prefs };
     const excluded = new Set([...(profile?.seen ?? []), ...(sp.get("skip")?.split(",") ?? [])]);
 
-    const first = await discover(f, 1, platforms);
+    const first = await discover(f, 1, opts);
     if (first.totalResults === 0) return NextResponse.json({ item: null, reason: "empty" });
     const pages = Math.min(first.totalPages, MAX_PAGES);
 
@@ -29,7 +26,7 @@ export async function GET(req: NextRequest) {
     for (let p = 1; p <= pages && order.length < 8; p++) if (!order.includes(p)) order.push(p);
 
     for (const page of order) {
-      const data = page === 1 ? first : await discover(f, page, platforms);
+      const data = page === 1 ? first : await discover(f, page, opts);
       const candidates = data.items.filter((t) => !excluded.has(titleKey(t)));
       if (candidates.length) {
         const pick = candidates[randInt(0, candidates.length - 1)];

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isProfileId } from "@/config/profiles";
 import { errorResponse } from "@/lib/api";
+import { sanitizePrefs } from "@/lib/prefs";
 import { emptyProfile, getProfile, saveProfile } from "@/lib/store";
 import type { ProfileData } from "@/lib/types";
 
@@ -29,6 +30,7 @@ function sanitize(body: Partial<ProfileData>): ProfileData {
     seen: Array.isArray(body.seen) ? body.seen.filter((k) => /^(movie|tv):\d+$/.test(k)).slice(0, LIMIT * 5) : base.seen,
     platforms: Array.isArray(body.platforms) ? body.platforms.filter(Number.isInteger).slice(0, 50) : base.platforms,
     lastFilters: body.lastFilters ?? null,
+    prefs: sanitizePrefs(body.prefs),
   };
 }
 

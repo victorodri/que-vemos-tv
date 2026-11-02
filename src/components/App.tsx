@@ -2,10 +2,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROFILES, isProfileId, type ProfileId } from "@/config/profiles";
 import { DEFAULT_FILTERS } from "@/lib/filters";
+import type { Prefs } from "@/lib/prefs";
 import { getJSON, toSaved } from "@/lib/client";
 import { titleKey, type Filters, type MediaType, type Meta, type ProfileData, type SavedTitle, type Title } from "@/lib/types";
+import { ForYouView } from "./ForYouView";
 import { ListView } from "./ListView";
 import { ProfilePicker } from "./ProfilePicker";
+import { Questionnaire } from "./Questionnaire";
 import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
 import { SettingsView } from "./SettingsView";
@@ -13,19 +16,20 @@ import { focusEl, focusFirst, useSpatialNav } from "./spatialNav";
 import { SurpriseView } from "./SurpriseView";
 import { DetailModal } from "./TitleFeature";
 
-type Tab = "search" | "surprise" | "list" | "settings";
+type Tab = "foryou" | "search" | "surprise" | "list" | "settings";
 type Detail = { type: MediaType; id: number; preview?: Title | SavedTitle };
 // El estado de navegación vive en el historial del navegador, así el botón «Atrás» del mando funciona.
 type Nav = { profile: ProfileId | null; tab: Tab; detail: Detail | null };
 
-const HOME: Nav = { profile: null, tab: "search", detail: null };
+const HOME: Nav = { profile: null, tab: "foryou", detail: null };
 const LAST_PROFILE = "quevemos:lastProfile";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "foryou", label: "Para ti" },
   { id: "search", label: "Buscar" },
   { id: "surprise", label: "🎲 Sorpréndeme" },
   { id: "list", label: "Mi lista" },
-  { id: "settings", label: "Plataformas" },
+  { id: "settings", label: "Ajustes" },
 ];
 
 function readLastProfile() {
@@ -44,6 +48,7 @@ export default function App() {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [filters, setFiltersState] = useState<Filters>(DEFAULT_FILTERS);
   const [lastUsed, setLastUsed] = useState<string | null>(null);
+  const [redoQuiz, setRedoQuiz] = useState(false);
   const dirty = useRef(false);
   const openerRef = useRef<HTMLElement | null>(null);
 
@@ -96,7 +101,7 @@ export default function App() {
     getJSON<ProfileData>(`/api/profile/${id}`).then(
       (data) => {
         setProfile({ id, data });
-        setFiltersState(data.lastFilters ?? DEFAULT_FILTERS);
+        setFiltersState({ ...DEFAULT_FILTERS, ...data.lastFilters });
       },
       (e) => setProfileError(e.message),
     );
@@ -154,7 +159,20 @@ export default function App() {
       localStorage.setItem(LAST_PROFILE, id);
     } catch {}
     setLastUsed(id);
-    push({ profile: id, tab: "search", detail: null });
+    setRedoQuiz(false);
+    push({ profile: id, tab: "foryou", detail: null });
+  };
+
+  // Al terminar el cuestionario se guarda al momento: las recomendaciones las calcula el servidor con estos gustos.
+  const finishQuiz = (prefs: Prefs, platforms: number[]) => {
+    if (!profile) return;
+    const f: Filters = { ...DEFAULT_FILTERS, type: prefs.types[0], onlyMine: platforms.length > 0 };
+    const next = { ...profile, data: { ...profile.data, prefs, platforms, lastFilters: f } };
+    setProfile(next);
+    save(next);
+    setFiltersState(f);
+    setRedoQuiz(false);
+    replace({ ...nav, tab: "foryou", detail: null });
   };
 
   const openDetail = (t: Title | SavedTitle) => {
@@ -176,13 +194,28 @@ export default function App() {
   useEffect(() => {
     if (api && !nav.detail) requestAnimationFrame(focusFirst);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api?.id]);
+  }, [api?.id, redoQuiz, Boolean(api?.data.prefs)]);
 
   // ---------- Render ----------
   if (!nav.profile) return <ProfilePicker lastUsed={lastUsed} onPick={pickProfile} />;
 
   const current = PROFILES.find((p) => p.id === nav.profile)!;
   const error = metaError ?? profileError;
+
+  if (api && meta && (!api.data.prefs || redoQuiz)) {
+    return (
+      <Questionnaire
+        key={`${api.id}:${redoQuiz}`}
+        name={current.name}
+        pareja={api.id === "pareja"}
+        meta={meta}
+        initial={api.data.prefs}
+        initialPlatforms={api.data.platforms}
+        onDone={finishQuiz}
+        onCancel={api.data.prefs ? () => setRedoQuiz(false) : undefined}
+      />
+    );
+  }
 
   return (
     <div className="app">
@@ -212,10 +245,11 @@ export default function App() {
       {api && meta && (
         <ProfileContext.Provider value={api}>
           <main inert={nav.detail ? true : undefined}>
+            {nav.tab === "foryou" && <ForYouView onOpen={openDetail} onRedo={() => setRedoQuiz(true)} />}
             {nav.tab === "search" && <SearchView filters={filters} onFilters={setFilters} meta={meta} onOpen={openDetail} />}
             {nav.tab === "surprise" && <SurpriseView filters={filters} onFilters={setFilters} meta={meta} />}
             {nav.tab === "list" && <ListView onOpen={openDetail} />}
-            {nav.tab === "settings" && <SettingsView meta={meta} />}
+            {nav.tab === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} />}
           </main>
           {nav.detail && <DetailModal key={`${nav.detail.type}:${nav.detail.id}`} target={nav.detail} onClose={back} />}
         </ProfileContext.Provider>
