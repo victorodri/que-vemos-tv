@@ -1506,3 +1506,30 @@ input:focus {
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* ---------- Deslizar con el pulgar (móvil y tabletas) ---------- */
+@media (pointer: coarse) {
+  .shelf-row,
+  .spot-strip,
+  .social-row,
+  .chips,
+  .reviews-list {
+    /* Inercia nativa, encaje tarjeta a tarjeta y sin arrastrar la página entera al llegar al final. */
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
+    scroll-padding-inline: 0.4rem;
+  }
+  .shelf-row > *,
+  .spot-strip > *,
+  .social-row > *,
+  .chips > * {
+    scroll-snap-align: start;
+  }
+  /* En pantallas táctiles no se agranda la tarjeta al tocarla (el «zoom» de foco es para el mando). */
+  .poster-card:focus,
+  .spot-thumb:focus {
+    transform: none;
+  }
+}

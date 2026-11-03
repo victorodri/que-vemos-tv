@@ -27,6 +27,8 @@ type Box = { el: HTMLElement; r: DOMRect };
 const ROW_SEL = "[data-nav-row], .shelf-row, .spot-strip, .tabs, .chips, .feedback, .spot-rate, .actions, .profiles, .reviews-tags";
 const rowOf = (el: Element) => el.closest(ROW_SEL);
 const lastInRow = new WeakMap<Element, HTMLElement>();
+/** Último elemento enfocado en cada vista (pestaña): al bajar desde el menú se vuelve a él. */
+const lastInView = new WeakMap<Element, HTMLElement>();
 /** Columna «pegajosa»: al subir y bajar por estanterías se mantiene la x de partida, como en las apps de TV. */
 let stickyX: number | null = null;
 
@@ -124,6 +126,7 @@ export function focusables(root: ParentNode): HTMLElement[] {
 // mantener una flecha se acumulaban desplazamientos y la tele iba a tirones y con retraso.
 
 const animations = new Map<Element | Window, number>();
+const latest = new Map<Element | Window, symbol>();
 const reduceMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function animateScroll(target: Element | Window, axis: "x" | "y", to: number) {
@@ -147,7 +150,16 @@ function animateScroll(target: Element | Window, axis: "x" | "y", to: number) {
     if (k < 1) animations.set(key, requestAnimationFrame(step));
     else animations.delete(key);
   };
+  const token = Symbol();
+  latest.set(key, token);
   animations.set(key, requestAnimationFrame(step));
+  // Si no hay fotogramas (pestaña en segundo plano, tele saturada), se coloca igualmente en su sitio.
+  setTimeout(() => {
+    if (latest.get(key) !== token || animations.get(key) === undefined) return;
+    cancelAnimationFrame(animations.get(key)!);
+    animations.delete(key);
+    set(to);
+  }, dur + 80);
 }
 
 /** Contenedor con scroll propio más cercano en un eje (fila de tarjetas, ficha modal…), o la ventana. */
@@ -210,13 +222,43 @@ export function focusEl(el: HTMLElement | null | undefined) {
   el.focus({ preventScroll: true });
   const row = rowOf(el);
   if (row) lastInRow.set(row, el);
+  const view = el.closest(".tab-view");
+  if (view) lastInView.set(view, el);
   reveal(el);
 }
 
 /** Enfoca el elemento marcado con data-autofocus (o el primero enfocable) dentro del ámbito activo. */
+/** Primer elemento visible con data-autofocus (las pestañas visitadas siguen montadas, pero ocultas). */
+export function visibleAutofocus(root: ParentNode = scope()): HTMLElement | null {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-autofocus]")) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return el;
+  }
+  return null;
+}
+
 export function focusFirst() {
   const root = scope();
-  focusEl(root.querySelector<HTMLElement>("[data-autofocus]") ?? focusables(root)[0]);
+  focusEl(visibleAutofocus(root) ?? focusables(root)[0]);
+}
+
+/**
+ * Devuelve el foco a lo último que se enfocó en la vista visible, sin mover el desplazamiento (que ya se ha
+ * restaurado). Devuelve false si no hay nada que recordar.
+ */
+export function focusLastInView(): boolean {
+  const view = document.querySelector("main .tab-view:not([hidden])");
+  const el = view ? lastInView.get(view) : undefined;
+  if (!el || !el.isConnected || el.getBoundingClientRect().height === 0) return false;
+  el.focus({ preventScroll: true });
+  return true;
+}
+
+/** Si la última interacción fue táctil o con ratón (no con el mando ni el teclado). */
+export let lastInputPointer = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", () => (lastInputPointer = true), true);
+  window.addEventListener("keydown", () => (lastInputPointer = false), true);
 }
 
 // Pila de «Atrás» locales: un panel o diálogo abierto (filtros, PIN…) se cierra antes de que actúe la app.
@@ -285,7 +327,11 @@ export function useSpatialNav(onBack: () => void) {
       // Al bajar desde la barra de pestañas se entra por el elemento principal de la vista (el de data-autofocus),
       // no por el que quede justo debajo de la pestaña: así «abajo» siempre lleva al mismo sitio.
       if (dir === "down" && current.closest("[data-nav-header]")) {
-        const entry = document.querySelector<HTMLElement>("main [data-autofocus]");
+        const main = document.querySelector("main");
+        // Se vuelve a donde estabas en esta vista; si no hay nada (o ya no está), a su elemento principal.
+        const view = main?.querySelector(".tab-view:not([hidden])");
+        const back = view ? lastInView.get(view) : undefined;
+        const entry = back && back.isConnected && back.getBoundingClientRect().height > 0 ? back : main ? visibleAutofocus(main) : null;
         if (entry && all.some((b) => b.el === entry)) {
           playMove();
           return focusEl(entry);

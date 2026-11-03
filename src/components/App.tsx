@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_FILTERS } from "@/lib/filters";
 import type { Prefs } from "@/lib/prefs";
 import type { ImplicitEvent, Signal } from "@/lib/reco/types";
@@ -17,7 +17,7 @@ import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
 import { SeenView } from "./SeenView";
 import { SettingsView } from "./SettingsView";
-import { focusEl, focusFirst, focusables, runBack, useSpatialNav } from "./spatialNav";
+import { focusEl, focusFirst, focusLastInView, focusables, lastInputPointer, runBack, useSpatialNav } from "./spatialNav";
 import { SurpriseView } from "./SurpriseView";
 import { DetailModal } from "./TitleFeature";
 
@@ -40,6 +40,7 @@ declare global {
 /** Tiempo para la segunda pulsación de Atrás que cierra la app. */
 const EXIT_WINDOW_MS = 2200;
 
+const KEEP_MOUNTED = new Set<Tab>(["foryou", "search", "surprise", "community"]);
 const HOME: Nav = { profile: null, tab: "foryou", detail: null };
 const LAST_PROFILE = "quevemos:lastProfile";
 
@@ -91,7 +92,11 @@ export default function App() {
   const [redoQuiz, setRedoQuiz] = useState(false);
   const dirty = useRef(false);
   // Tarjeta que abrió la ficha, y su contenedor y posición por si desaparece mientras tanto (marcada como vista, descartada…).
-  const openerRef = useRef<{ el: HTMLElement; group: Element | null; index: number } | null>(null);
+  const openerRef = useRef<{ el: HTMLElement; group: Element | null; index: number; scrollY: number } | null>(null);
+  // Pestañas ya visitadas: siguen montadas (ocultas) para no recargar ni perder dónde estabas al volver.
+  const [visited, setVisited] = useState<Set<Tab>>(() => new Set<Tab>(["foryou"]));
+  // Desplazamiento de cada pestaña, para dejarte en el mismo sitio del listado al volver a ella.
+  const scrollByTab = useRef<Partial<Record<Tab, number>>>({});
 
   // ---------- Historial y botón Atrás ----------
   const navRef = useRef(nav);
@@ -169,12 +174,15 @@ export default function App() {
     }
     if (armExit()) window.QueVemosAndroid?.exit?.();
   };
-  // Tras volver a «Para ti» con Atrás (el cambio llega en un popstate asíncrono), el foco va a su pestaña.
+  // Tras volver a «Para ti» con Atrás (el cambio llega en un popstate asíncrono): el foco vuelve a la tarjeta en la
+  // que estabas (el desplazamiento ya se ha restaurado); si no había ninguna, a su pestaña.
   const focusTabAfterNav = useRef(false);
   useEffect(() => {
     if (!focusTabAfterNav.current || nav.tab !== "foryou") return;
     focusTabAfterNav.current = false;
-    requestAnimationFrame(focusFirst);
+    setTimeout(() => {
+      if (lastInputPointer || !focusLastInView()) focusFirst();
+    }, 0);
   }, [nav.tab]);
   const backRef = useRef(back);
   backRef.current = back;
@@ -428,7 +436,7 @@ export default function App() {
   const openDetail = (t: Title | SavedTitle) => {
     const el = document.activeElement as HTMLElement | null;
     const group = el?.closest("[data-nav-group], .grid, .shelf-row") ?? null;
-    openerRef.current = el ? { el, group, index: group ? focusables(group).indexOf(el) : -1 } : null;
+    openerRef.current = el && el !== document.body ? { el, group, index: group ? focusables(group).indexOf(el) : -1, scrollY: window.scrollY } : { el: document.body, group: null, index: -1, scrollY: window.scrollY };
     api?.track(t, "open");
     push({ ...nav, detail: { type: t.type, id: t.id, preview: t } });
   };
@@ -439,8 +447,16 @@ export default function App() {
   useEffect(() => {
     if (hadDetail.current && !nav.detail) {
       const o = openerRef.current;
-      requestAnimationFrame(() => {
-        if (o && document.contains(o.el)) return focusEl(o.el);
+      // Primero, el listado exactamente donde estaba; luego el foco en la tarjeta sin volver a desplazar.
+      if (o) window.scrollTo({ top: o.scrollY });
+      setTimeout(() => {
+        if (o) window.scrollTo({ top: o.scrollY });
+        if (o && o.el !== document.body && document.contains(o.el)) {
+          // Con el dedo o el ratón no se deja el anillo de foco puesto en la tarjeta.
+          if (lastInputPointer) return;
+          return o.el.focus({ preventScroll: true });
+        }
+        if (o && o.el === document.body) return;
         const items = o?.group && document.contains(o.group) ? focusables(o.group) : [];
         if (items.length && o) return focusEl(items[Math.min(Math.max(o.index, 0), items.length - 1)]);
         focusFirst();
@@ -448,6 +464,27 @@ export default function App() {
     }
     hadDetail.current = Boolean(nav.detail);
   }, [nav.detail]);
+
+  // Al cambiar de pestaña: se guarda el desplazamiento de la que se deja y se recupera el de la nueva.
+  const prevTab = useRef<Tab>(nav.tab);
+  useLayoutEffect(() => {
+    if (prevTab.current === nav.tab) return;
+    prevTab.current = nav.tab;
+    setVisited((v) => (v.has(nav.tab) ? v : new Set(v).add(nav.tab)));
+    window.scrollTo({ top: scrollByTab.current[nav.tab] ?? 0 });
+  }, [nav.tab]);
+  useEffect(() => {
+    const onScroll = () => {
+      if (!navRef.current.detail && prevTab.current === navRef.current.tab) scrollByTab.current[navRef.current.tab] = window.scrollY;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  // Otro perfil: se empieza de cero.
+  useEffect(() => {
+    setVisited(new Set<Tab>([navRef.current.tab]));
+    scrollByTab.current = {};
+  }, [api?.id]);
 
   // Al entrar en un perfil, foco en la primera pestaña.
   useEffect(() => {
@@ -544,13 +581,20 @@ export default function App() {
       {api && meta && (
         <ProfileContext.Provider value={api}>
           <main inert={nav.detail ? true : undefined}>
-            {nav.tab === "foryou" && <ForYouView onOpen={openDetail} onRedo={() => setRedoQuiz(true)} />}
-            {nav.tab === "search" && <SearchView filters={filters} onFilters={setFilters} meta={meta} onOpen={openDetail} />}
-            {nav.tab === "surprise" && <SurpriseView filters={filters} onFilters={setFilters} meta={meta} />}
-            {nav.tab === "community" && <CommunityView onOpen={openDetail} />}
-            {nav.tab === "list" && <ListView onOpen={openDetail} />}
-            {nav.tab === "seen" && <SeenView meta={meta} onOpen={openDetail} />}
-            {nav.tab === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} onForget={forgetDevice} />}
+            {(["foryou", "search", "surprise", "community", "list", "seen", "settings"] as Tab[])
+              // Se quedan montadas las vistas caras de recargar; Mi lista, Vistos y Ajustes se rehacen (dependen de lo último que marcaste).
+              .filter((t) => t === nav.tab || (visited.has(t) && KEEP_MOUNTED.has(t)))
+              .map((t) => (
+                <div key={t} className="tab-view" hidden={t !== nav.tab}>
+                  {t === "foryou" && <ForYouView onOpen={openDetail} onRedo={() => setRedoQuiz(true)} />}
+                  {t === "search" && <SearchView filters={filters} onFilters={setFilters} meta={meta} onOpen={openDetail} />}
+                  {t === "surprise" && <SurpriseView filters={filters} onFilters={setFilters} meta={meta} />}
+                  {t === "community" && <CommunityView onOpen={openDetail} />}
+                  {t === "list" && <ListView onOpen={openDetail} />}
+                  {t === "seen" && <SeenView meta={meta} onOpen={openDetail} />}
+                  {t === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} onForget={forgetDevice} />}
+                </div>
+              ))}
           </main>
           {nav.detail && <DetailModal key={`${nav.detail.type}:${nav.detail.id}`} target={nav.detail} onClose={stableBack} />}
         </ProfileContext.Provider>
