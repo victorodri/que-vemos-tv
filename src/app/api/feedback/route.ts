@@ -3,6 +3,7 @@ import { isProfileId } from "@/config/profiles";
 import { errorResponse } from "@/lib/api";
 import { IMPLICIT, KEY_RE, SIGNALS } from "@/lib/reco/feedback";
 import { coupleRetrainAfter, logEvent, retrain } from "@/lib/reco/model";
+import { learnFromReaction } from "@/lib/reco/surprise";
 import type { ImplicitEvent, Signal } from "@/lib/reco/types";
 import { getProfile, kvGet, kvSet, saveFeedback } from "@/lib/store";
 
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
       if (await kvGet(dedupeKey).catch(() => null)) return NextResponse.json({ ok: true, deduped: true });
       await kvSet(dedupeKey, 1, 60).catch(() => {});
       await logEvent(profile, { k: key, e: body.event, t });
+      const ev = body.event;
+      after(() => learnFromReaction(profile, key, ev).catch(() => {}));
       return NextResponse.json({ ok: true });
     }
 
@@ -60,6 +63,8 @@ export async function POST(req: Request) {
     else feedback[key] = { s: body.signal as Signal, t };
     await saveFeedback(profile, feedback);
     await logEvent(profile, { k: key, e: body.signal ?? "clear", t });
+    const sig = body.signal ?? "clear";
+    after(() => learnFromReaction(profile, key, sig).catch(() => {}));
     await retrain(profile);
     coupleRetrainAfter(profile, after);
     return NextResponse.json({ ok: true, feedback });

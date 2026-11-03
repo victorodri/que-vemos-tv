@@ -5,6 +5,7 @@ import { GENRE_GROUPS, type Prefs } from "../prefs";
 import { getProfile, kvGet, kvSet, listPush, listRange } from "../store";
 import type { ProfileData } from "../types";
 import { getManyFeatures, normalize } from "./features";
+import { logisticScore, trainLogistic, type Example } from "./learner";
 import type { ImplicitEvent, RecoEvent, Signal, TasteModel } from "./types";
 
 // Modelo de gustos: un vector de pesos por rasgo que se aprende de todo lo que hace el perfil.
@@ -12,7 +13,7 @@ import type { ImplicitEvent, RecoEvent, Signal, TasteModel } from "./types";
 // y lo reciente que es (olvido exponencial). El cuestionario actúa como «prior» que pierde
 // importancia a medida que hay señales reales.
 
-const MODEL_VERSION = 4;
+const MODEL_VERSION = 5;
 export const MAX_EVENTS = 2000;
 
 /** Peso de cada señal en el aprendizaje. */
@@ -177,7 +178,44 @@ export async function buildTaste(data: ProfileData, events: RecoEvent[] = [], no
     ...Object.keys(data.feedback), // lo ya valorado no se vuelve a recomendar
   ];
 
-  return { w: pruned, anchors, blocked: [...new Set(blocked)], rejected, signals, updatedAt: now, version: MODEL_VERSION };
+  // Regresión logística: ejemplos explícitos/implícitos + títulos conocidos sin interacción como
+  // negativos de baja confianza (las semillas del onboarding, ya cacheadas).
+  const examples: Example[] = [];
+  for (const k of keys) {
+    const f = feats.get(k);
+    const x = weights.get(k)!;
+    if (f) examples.push({ f: f.f, y: x > 0 ? 1 : 0, c: Math.min(3, Math.abs(x)) });
+  }
+  const seedTitles = (await kvGet<{ type: string; id: number }[]>("seeds:v1:movie+tv").catch(() => null)) ?? [];
+  const background = seedTitles.map((t) => `${t.type}:${t.id}`).filter((k) => !weights.has(k));
+  const bgFeats = await getManyFeatures(background);
+  for (const f of bgFeats.values()) examples.push({ f: f.f, y: 0, c: 0.15 });
+  const hasPositive = examples.some((e) => e.y === 1);
+  const lr = hasPositive && examples.length >= 6 ? trainLogistic(examples) : undefined;
+
+  // Distribución de géneros de lo que le gusta, para calibrar las listas.
+  const genreDist: Record<string, number> = {};
+  for (const k of keys) {
+    const x = weights.get(k)!;
+    if (x <= 0) continue;
+    const ids = feats.get(k)?.genreIds ?? [];
+    for (const g of ids) genreDist[g] = (genreDist[g] ?? 0) + x / ids.length;
+  }
+  const total = Object.values(genreDist).reduce((a, b) => a + b, 0);
+  for (const g of Object.keys(genreDist)) genreDist[g] /= total || 1;
+
+  return { w: pruned, anchors, blocked: [...new Set(blocked)], rejected, lr, genreDist, signals, updatedAt: now, version: MODEL_VERSION };
+}
+
+/**
+ * Afinidad de un título con el perfil, en [-1, 1]: mezcla el vector Rocchio (robusto con pocas señales)
+ * con la regresión logística, que gana peso a medida que hay más ejemplos (hasta el 50 %).
+ */
+export function affinity(t: TasteModel, f: Vec): number {
+  const roc = cosine(t.w, f);
+  if (!t.lr || t.lr.n < 8) return roc;
+  const mix = Math.min(0.5, t.lr.n / 60);
+  return (1 - mix) * roc + mix * logisticScore(t.lr, f);
 }
 
 /**
@@ -210,6 +248,9 @@ export async function trainCouple(coupleId: string, memberIds: string[]): Promis
   );
   const model: TasteModel = {
     ...own,
+    // La regresión de la pareja solo conoce sus propias señales; la combinación con los miembros va en `w`.
+    lr: undefined,
+    genreDist: mergeDist([own.genreDist, ...members.map((m) => m.genreDist)]),
     w,
     anchors: [...new Set([...own.anchors, ...memberAnchors])].slice(0, 8),
     blocked: [...new Set([...own.blocked, ...rejected])],
@@ -219,6 +260,13 @@ export async function trainCouple(coupleId: string, memberIds: string[]): Promis
   };
   await kvSet(tasteKey(coupleId), model).catch(() => {});
   return model;
+}
+
+function mergeDist(ds: (Record<string, number> | undefined)[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  const valid = ds.filter((d): d is Record<string, number> => !!d && Object.keys(d).length > 0);
+  for (const d of valid) for (const [g, x] of Object.entries(d)) out[g] = (out[g] ?? 0) + x / valid.length;
+  return out;
 }
 
 /** Si cambia un miembro, la pareja también debe reentrenarse (después de responder). */

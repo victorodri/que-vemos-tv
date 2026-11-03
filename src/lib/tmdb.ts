@@ -109,13 +109,19 @@ const toPage = (raw: RawPage, type: MediaType): Page => ({
  * Discover con todos los filtros. Solo devuelve títulos disponibles en streaming en España.
  * Con `f.taste` y gustos guardados, cada filtro en «Cualquiera» se rellena con los gustos del perfil.
  */
-export async function discover(f: Filters, page: number, opts: { platforms?: number[]; prefs?: Prefs | null } = {}): Promise<Page> {
+export type DiscoverSort = "popularity" | "rating" | "votes" | "recent" | "gems";
+
+export async function discover(
+  f: Filters,
+  page: number,
+  opts: { platforms?: number[]; prefs?: Prefs | null; sort?: DiscoverSort } = {},
+): Promise<Page> {
   const platforms = opts.platforms ?? [];
   const taste = f.taste && opts.prefs ? prefsToDiscover(opts.prefs, f.type) : null;
   const [yearFrom, to] = yearRange(f.year);
   const from = f.year ? yearFrom : (taste?.fromYear ?? null);
   const maxRuntime = f.maxRuntime ?? taste?.maxRuntime ?? null;
-  const hidden = taste?.discovery === "hidden";
+  const hidden = opts.sort === "gems" || (!opts.sort && taste?.discovery === "hidden");
   const isMovie = f.type === "movie";
   const dateField = isMovie ? "primary_release_date" : "first_air_date";
   const raw = await tmdb<RawPage>(`/discover/${f.type}`, {
@@ -129,12 +135,27 @@ export async function discover(f: Filters, page: number, opts: { platforms?: num
     "with_runtime.lte": maxRuntime,
     "with_runtime.gte": maxRuntime ? 1 : null, // descarta títulos sin duración conocida
     "vote_average.gte": f.minRating ?? taste?.minRating ?? null,
-    "vote_count.gte": isMovie ? 150 : 50,
+    "vote_count.gte": opts.sort === "rating" ? (isMovie ? 400 : 150) : isMovie ? 150 : 50,
     // «Joyas ocultas»: bien valoradas pero con pocos votos.
     "vote_count.lte": hidden ? (isMovie ? 2500 : 600) : null,
     [`${dateField}.gte`]: from ? `${from}-01-01` : null,
-    [`${dateField}.lte`]: to ? `${to}-12-31` : null,
-    sort_by: hidden ? "vote_average.desc" : "popularity.desc",
+    // Joyas: solo con más de 9 meses (los estrenos tienen notas infladas por pocos votos de fans).
+    [`${dateField}.lte`]: hidden
+      ? new Date(Math.min(Date.now() - 270 * 86400000, to ? Date.parse(`${to}-12-31`) : Infinity)).toISOString().slice(0, 10)
+      : to
+        ? `${to}-12-31`
+        : opts.sort === "recent"
+          ? new Date().toISOString().slice(0, 10)
+          : null,
+    sort_by: hidden
+      ? "vote_average.desc"
+      : opts.sort === "rating"
+        ? "vote_average.desc"
+        : opts.sort === "votes"
+          ? "vote_count.desc"
+          : opts.sort === "recent"
+            ? `${dateField}.desc`
+            : "popularity.desc",
     include_adult: "false",
     page,
   });

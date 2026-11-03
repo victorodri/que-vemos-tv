@@ -17,7 +17,10 @@ export function TitleFeature({ title, children }: { title: TitleDetail | Title |
       <div className="feature-shade">
         <div className="feature-poster">{t.poster ? <img src={t.poster} alt="" /> : <span className="poster-fallback">{t.title}</span>}</div>
         <div className="feature-info">
-          <p className="feature-kind">{t.type === "movie" ? "Película" : "Serie"}</p>
+          <p className="feature-kind">
+            {t.type === "movie" ? "Película" : "Serie"}
+            {(title as { reason?: string }).reason && <span className="feature-reason"> · {(title as { reason?: string }).reason}</span>}
+          </p>
           <h2 className="feature-title">{t.title}</h2>
           <p className="feature-meta">
             <span>{t.year ?? "—"}</span>

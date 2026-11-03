@@ -6,7 +6,7 @@ import { getProfile, kvGet, kvSet } from "../store";
 import { getProviders, tmdb, toTitle } from "../tmdb";
 import type { MediaType, Title } from "../types";
 import { getManyFeatures, normalize, shallowFeatures } from "./features";
-import { coupleMembers, cosine, dot, getTaste, type Vec } from "./model";
+import { affinity, coupleMembers, dot, getTaste, type Vec } from "./model";
 import type { ItemFeatures, RecoItem, Shelf, TasteModel } from "./types";
 
 // Recomendador en dos fases, como los de e-commerce:
@@ -47,6 +47,8 @@ export const TUNING = {
   /** Penalización (o premio) por que el mismo título venga de varias fuentes. */
   multiSourceBonus: 0.04,
   mmrLambda: 0.6, // evaluación offline: mejora diversidad y precisión en todas las personas
+  /** Peso de la calibración de géneros en la lista principal (0 = desactivada). */
+  calibration: 0.06,
   jitter: 0.02,
   minAffinity: -0.05,
   bayesM: 200,
@@ -220,7 +222,19 @@ function avoidedGenres(prefs: Prefs | null): Record<MediaType, Set<number>> {
   };
 }
 
-async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, platforms: number[]): Promise<Ranked[]> {
+/**
+ * Afinidad de grupo para la pareja, por título (estrategia «media sin miseria» de los recomendadores
+ * de grupo, Masthoff 2011): la media de los dos, pero penalizando que a uno no le guste nada.
+ */
+function groupAffinity(members: TasteModel[], own: TasteModel, f: Vec): number {
+  const affs = members.map((m) => affinity(m, f));
+  const avg = affs.reduce((a, b) => a + b, 0) / affs.length;
+  return (0.35 * avg + 0.35 * Math.min(...affs) + 0.1 * affinity(own, f)) / 0.8;
+}
+
+async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, platforms: number[], members: TasteModel[] = []): Promise<Ranked[]> {
+  const group = members.length >= 2;
+  const aff_ = (f: Vec) => (group ? groupAffinity(members, taste, f) : affinity(taste, f));
   const blocked = new Set(taste.blocked);
   const avoid = avoidedGenres(prefs);
   const w = taste.w;
@@ -234,7 +248,7 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
   const stage1 = unique
     .map((c) => {
       const q = bayesQuality(c.raw.vote_average, c.raw.vote_count);
-      const aff = cosine(w, c.shallow);
+      const aff = aff_(c.shallow);
       const s =
         (coldStart ? 0.35 : TUNING.wAffinity) * aff +
         (coldStart ? 0.45 : TUNING.wQuality) * q +
@@ -257,9 +271,9 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
     if (!p || !p.providers.length) return; // sin streaming en España
     if (platforms.length && !p.providers.some((x) => platforms.includes(x.id))) return;
     const feat = feats.get(c.key) ?? null;
-    const aff = cosine(w, feat?.f ?? c.shallow);
+    const aff = aff_(feat?.f ?? c.shallow);
     // La pareja no aplica el umbral: su vector mezcla dos gustos y descartaría casi todo.
-    if (!coldStart && !taste.anchorOwner && aff < TUNING.minAffinity) return;
+    if (!coldStart && !group && aff < TUNING.minAffinity) return;
     const q = bayesQuality(c.raw.vote_average, c.raw.vote_count);
     const score =
       (coldStart ? 0.35 : TUNING.wAffinity) * aff +
@@ -281,23 +295,58 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
   return ranked.sort((a, b) => b.score - a.score);
 }
 
-/** Maximal Marginal Relevance: buena puntuación pero sin repetir lo mismo diez veces seguidas. */
-export function mmr<T extends { score: number; feat: ItemFeatures | null; shallow: Vec }>(items: T[], k: number, lambda = TUNING.mmrLambda): T[] {
+/** KL(p || q̃) entre la distribución de géneros objetivo y la de la lista (q suavizada con p, α = 0,01). */
+function calibrationKL(target: Record<string, number>, counts: Record<string, number>, total: number): number {
+  let kl = 0;
+  for (const [g, p] of Object.entries(target)) {
+    if (p <= 0) continue;
+    const q = total ? (counts[g] ?? 0) / total : 0;
+    kl += p * Math.log(p / (0.99 * q + 0.01 * p));
+  }
+  return kl;
+}
+
+/**
+ * Maximal Marginal Relevance (Carbonell y Goldstein, 1998): buena puntuación sin repetir lo mismo diez veces
+ * seguidas. Con `calibrate`, además acerca el reparto de géneros de la lista al de los gustos del perfil
+ * (Steck, «Calibrated Recommendations», RecSys 2018).
+ */
+export function mmr<T extends { score: number; feat: ItemFeatures | null; shallow: Vec; raw?: { genre_ids?: number[] } }>(
+  items: T[],
+  k: number,
+  lambda = TUNING.mmrLambda,
+  calibrate?: Record<string, number>,
+): T[] {
   const pool = [...items];
   const picked: T[] = [];
   const vec = (x: T) => x.feat?.f ?? x.shallow;
+  const genresOf = (x: T): number[] => x.feat?.genreIds ?? x.raw?.genre_ids ?? [];
+  const useCal = !!calibrate && Object.keys(calibrate).length >= 2;
+  const counts: Record<string, number> = {};
+  let total = 0;
   while (picked.length < k && pool.length) {
     let bestI = 0;
     let best = -Infinity;
     pool.forEach((it, i) => {
       const sim = picked.length ? Math.max(...picked.map((p) => dot(vec(p), vec(it)))) : 0;
-      const v = lambda * it.score - (1 - lambda) * sim;
+      let cal = 0;
+      if (useCal) {
+        const gs = genresOf(it);
+        const c2 = { ...counts };
+        for (const g of gs) c2[g] = (c2[g] ?? 0) + 1 / gs.length;
+        cal = calibrationKL(calibrate!, c2, total + (gs.length ? 1 : 0));
+      }
+      const v = lambda * it.score - (1 - lambda) * sim - TUNING.calibration * cal;
       if (v > best) {
         best = v;
         bestI = i;
       }
     });
-    picked.push(pool.splice(bestI, 1)[0]);
+    const chosen = pool.splice(bestI, 1)[0];
+    picked.push(chosen);
+    const gs = genresOf(chosen);
+    for (const g of gs) counts[g] = (counts[g] ?? 0) + 1 / gs.length;
+    if (gs.length) total++;
   }
   return picked;
 }
@@ -306,9 +355,9 @@ export function mmr<T extends { score: number; feat: ItemFeatures | null; shallo
  * Recomendación «pura»: dado un modelo de gustos, devuelve el ranking completo (ya filtrado y diversificable).
  * No lee ni escribe perfiles; la usan getShelves y la evaluación offline (scripts/eval-reco.ts).
  */
-export async function recommend(taste: TasteModel, prefs: Prefs | null, platforms: number[], types: MediaType[]) {
+export async function recommend(taste: TasteModel, prefs: Prefs | null, platforms: number[], types: MediaType[], members: TasteModel[] = []) {
   const cands = await gatherCandidates(types, taste, prefs, platforms);
-  return rank(cands, taste, prefs, platforms);
+  return rank(cands, taste, prefs, platforms, members);
 }
 
 export type { Ranked, Source };
@@ -369,7 +418,8 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   if (cached) return cached;
 
   const plural = profileId === "pareja";
-  const ranked = await recommend(taste, profile.prefs, profile.platforms, types);
+  const memberTastes = await Promise.all(coupleMembers(profileId).map((m) => getTaste(m)));
+  const ranked = await recommend(taste, profile.prefs, profile.platforms, types, memberTastes);
 
   const anchorFeats = await getManyFeatures(taste.anchors);
   const anchorTitles = new Map([...anchorFeats].map(([k, f]) => [k, f.title]));
@@ -391,7 +441,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
     const together = ranked
       .map((r) => {
         const f = r.feat?.f ?? r.shallow;
-        const minAff = Math.min(...mt.map((m) => cosine(m.w, f)));
+        const minAff = Math.min(...mt.map((m) => affinity(m, f)));
         return { r, s: 0.7 * minAff + 0.3 * r.quality };
       })
       .filter((x) => x.s > 0.1)
@@ -404,7 +454,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
     }
   }
 
-  const top = mmr(take(ranked, 60), 20);
+  const top = mmr(take(ranked, 60), 20, TUNING.mmrLambda, taste.genreDist);
   shelves.push({ id: "top", title: plural ? "Lo mejor para vosotros" : "Lo mejor para ti", items: top.map((r) => toItem(r, reason(r))) });
   top.slice(0, 8).forEach((r) => used.add(r.key));
 
@@ -448,37 +498,6 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
 
   await kvSet(cacheKey, shelves, SHELVES_TTL).catch(() => {});
   return shelves;
-}
-
-// ---------- Sorpréndeme personalizado ----------
-
-/**
- * Elige un título de una lista ya filtrada (con los filtros del usuario) ponderando por afinidad y calidad:
- * muestreo «softmax» entre los mejores, así sale algo que encaja pero no siempre lo mismo.
- */
-export function pickWeighted(titles: (Title & { voteCount?: number; popularity?: number; lang?: string })[], taste: TasteModel, temperature = 0.08): Title | null {
-  // Solo lo rechazado: lo visto y lo ya propuesto lo excluye quien llama; la lista «Quiero verla» sí vale.
-  const rejected = new Set(taste.rejected ?? []);
-  const scored = titles
-    .filter((t) => !rejected.has(`${t.type}:${t.id}`))
-    .map((t) => {
-      const raw = { genre_ids: t.genreIds, original_language: t.lang, [t.type === "movie" ? "release_date" : "first_air_date"]: t.year ? `${t.year}-01-01` : undefined };
-      const aff = cosine(taste.w, normalize(shallowFeatures(raw, t.type)));
-      const s = (taste.signals < 3 ? 0.35 : 0.6) * aff + 0.3 * bayesQuality(t.rating, t.voteCount ?? 500);
-      return { t, s };
-    })
-    .sort((a, b) => b.s - a.s)
-    .slice(0, 15);
-  if (!scored.length) return null;
-  const max = scored[0].s;
-  const ws = scored.map((x) => Math.exp((x.s - max) / temperature));
-  const total = ws.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < scored.length; i++) {
-    r -= ws[i];
-    if (r <= 0) return scored[i].t;
-  }
-  return scored[0].t;
 }
 
 // ---------- Semillas para el onboarding ----------

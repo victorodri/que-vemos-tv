@@ -982,3 +982,11 @@ input:focus {
     width: 7.5rem;
   }
 }
+
+/* Por qué se propone un título (Sorpréndeme). */
+.feature-reason {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}

@@ -8,44 +8,80 @@ import { useProfile } from "./profileContext";
 import { focusEl } from "./spatialNav";
 import { FeedbackButtons, ProfileActions, TitleFeature } from "./TitleFeature";
 
+type SurpriseItem = TitleDetail & { reason?: string; arm?: string };
+
+/** Propuestas que se tienen precargadas: «Otra» es instantáneo y nunca se acaba. */
+const BATCH = 5;
+const REFILL_BELOW = 3;
+
 export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; onFilters: (f: Filters) => void; meta: Meta }) {
   const profile = useProfile();
-  const [item, setItem] = useState<TitleDetail | null>(null);
+  const [item, setItem] = useState<SurpriseItem | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const skip = useRef<string[]>([]);
+  const queue = useRef<SurpriseItem[]>([]);
+  /** Todo lo propuesto en esta sesión (también lo que está en cola), para no repetir. */
+  const seenHere = useRef<string[]>([]);
+  const inflight = useRef<Promise<void> | null>(null);
+  const generation = useRef(0);
   const againRef = useRef<HTMLButtonElement>(null);
   const filterKey = filtersToParams({ ...filters, query: "" }).toString();
   const tasteKey = hashOf([profile.data.platforms, profile.data.prefs]);
 
-  // Con filtros nuevos, las propuestas anteriores vuelven a valer.
+  // Con filtros o gustos nuevos se vacía la cola: lo precargado ya no vale.
   useEffect(() => {
-    skip.current = [];
+    generation.current++;
+    queue.current = [];
+    seenHere.current = [];
+    inflight.current = null;
   }, [filterKey, tasteKey]);
 
+  function refill(): Promise<void> {
+    if (inflight.current) return inflight.current;
+    const gen = generation.current;
+    const q = new URLSearchParams(filterKey);
+    q.set("profile", profile.id);
+    q.set("n", String(BATCH));
+    if (seenHere.current.length) q.set("skip", seenHere.current.slice(-120).join(","));
+    const p = getJSON<{ items: SurpriseItem[]; reason?: string }>(`/api/surprise?${q}`)
+      .then((res) => {
+        if (gen !== generation.current) return;
+        for (const it of res.items) {
+          const k = titleKey(it);
+          if (seenHere.current.includes(k)) continue;
+          seenHere.current.push(k);
+          queue.current.push(it);
+        }
+        if (!res.items.length && !queue.current.length) setMessage("No hay nada con estos filtros. Prueba a cambiarlos.");
+      })
+      .catch((e) => {
+        if (gen === generation.current && !queue.current.length) setMessage((e as Error).message);
+      })
+      .finally(() => {
+        if (gen === generation.current) inflight.current = null;
+      });
+    inflight.current = p;
+    return p;
+  }
+
   async function next() {
-    setLoading(true);
     setMessage(null);
-    try {
-      const q = new URLSearchParams(filterKey);
-      q.set("profile", profile.id);
-      // Solo las últimas 40 para no hacer URLs enormes.
-      if (skip.current.length) q.set("skip", skip.current.slice(-40).join(","));
-      const res = await getJSON<{ item: TitleDetail | null; reason?: string }>(`/api/surprise?${q}`);
-      if (res.item) {
-        skip.current.push(titleKey(res.item));
-        setItem(res.item);
-        requestAnimationFrame(() => focusEl(againRef.current));
-      } else {
-        setItem(null);
-        setMessage(res.reason === "exhausted" ? "Ya os he propuesto todo lo que hay con estos filtros. Prueba a cambiarlos." : "No hay nada con estos filtros.");
-      }
-    } catch (e) {
-      setMessage((e as Error).message);
-    } finally {
+    if (!queue.current.length) {
+      setLoading(true);
+      await refill();
+      // Si el lote llegó vacío por mala suerte con las fuentes, un segundo intento.
+      if (!queue.current.length) await refill();
       setLoading(false);
     }
+    const it = queue.current.shift();
+    if (it) {
+      setItem(it);
+      requestAnimationFrame(() => focusEl(againRef.current));
+    } else if (!message) {
+      setItem(null);
+    }
+    if (queue.current.length < REFILL_BELOW) void refill();
   }
 
   return (

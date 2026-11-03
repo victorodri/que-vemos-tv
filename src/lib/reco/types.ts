@@ -71,6 +71,10 @@ export interface TasteModel {
   blocked: string[];
   /** Solo los rechazados explícitamente (no me gusta / no me interesa). */
   rejected: string[];
+  /** Regresión logística aprendida (ver learner.ts); ausente con pocas señales o en la pareja. */
+  lr?: { w: Record<string, number>; b: number; n: number };
+  /** Distribución de géneros de lo que le gusta (para calibrar las listas, Steck 2018). */
+  genreDist?: Record<string, number>;
   /** En la pareja: de quién es cada ancla que no es de la propia pareja (clave → id de perfil). */
   anchorOwner?: Record<string, string>;
   /** Nº de señales usadas: sirve para decidir cuánto explorar. */
