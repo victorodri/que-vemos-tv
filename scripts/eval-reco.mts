@@ -82,7 +82,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 
 // ---------- Motor (después de parchear fetch) ----------
 const ENGINE = arg("engine", "src");
-const engine = (ENGINE === "quota" ? await import("./variants/engine-quota") : await import("../src/lib/reco/engine")) as typeof import("../src/lib/reco/engine");
+const engine = (
+  ENGINE === "quota" ? await import("./variants/engine-quota") : ENGINE === "head" ? await import("./variants/engine-head") : await import("../src/lib/reco/engine")
+) as typeof import("../src/lib/reco/engine");
 if (ENGINE === "quota") (engine as unknown as { setSourceQuota: (q: number) => void }).setSourceQuota(Number(arg("quota", "0.4")));
 const model = await import("../src/lib/reco/model");
 const features = await import("../src/lib/reco/features");
@@ -404,6 +406,18 @@ const VARIANTS: Variant[] = [
   { name: "combo", apply: () => Object.assign(engine.TUNING, { wAffinity: 0.75, wQuality: 0.15, mmrLambda: 0.6 }) },
   { name: "combo2", apply: () => Object.assign(engine.TUNING, { wAffinity: 0.7, wQuality: 0.2, mmrLambda: 0.65 }) },
   { name: "comboNeg", apply: () => { Object.assign(engine.TUNING, { wAffinity: 0.75, wQuality: 0.15, mmrLambda: 0.6 }); Object.assign(model.SIGNAL_WEIGHT, { dislike: -3.5, not_interested: -1.8 }); } },
+  { name: "gcalUnion", apply: () => Object.assign(engine.TUNING, { groupCalibration: "union", sharedRetrieval: false }) },
+  { name: "seenPen0", apply: () => Object.assign(engine.TUNING, { groupSeenPenalty: 0 }) },
+  { name: "seenPen30", apply: () => Object.assign(engine.TUNING, { groupSeenPenalty: 0.3 }) },
+  { name: "noFresh", apply: () => Object.assign(engine.TUNING, { freshShrink: 0 }) },
+  { name: "noItemExplain", apply: () => Object.assign(engine.TUNING, { itemExplainMin: 2 }) },
+  { name: "noBecauseFloor", apply: () => Object.assign(engine.TUNING, { becauseMinVotes: { movie: 0, tv: 0 } }) },
+  { name: "noRomanceKw", apply: () => Object.assign(engine.TUNING, { romanceKwPenalty: 0 }) },
+  { name: "gemsAllLangs", apply: () => Object.assign(engine.TUNING, { gemsLangs: 0 }) },
+  { name: "noSharedRet", apply: () => Object.assign(engine.TUNING, { sharedRetrieval: false }) },
+  { name: "gcalNone", apply: () => Object.assign(engine.TUNING, { groupCalibration: "none" }) },
+  { name: "gMin", apply: () => Object.assign(engine.TUNING, { groupCalibration: "shared", group: { avg: 0.25, min: 0.55, own: 0.1 } }) },
+  { name: "gMinNone", apply: () => Object.assign(engine.TUNING, { groupCalibration: "none", group: { avg: 0.25, min: 0.55, own: 0.1 } }) },
   { name: "negStrong", apply: () => Object.assign(model.SIGNAL_WEIGHT, { dislike: -3.5, not_interested: -1.8 }) },
 ];
 

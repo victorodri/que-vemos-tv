@@ -262,7 +262,9 @@ export async function surpriseBatch(profileId: string, f: Filters, n: number, cl
   const scoreOf = (c: Cand) => {
     const raw = { genre_ids: c.t.genreIds, [c.t.type === "movie" ? "release_date" : "first_air_date"]: c.t.year ? `${c.t.year}-01-01` : undefined };
     const aff = affinity(taste, normalize(shallowFeatures(raw, c.t.type)));
-    return (taste.signals < 3 ? 0.3 : 0.6) * aff + 0.3 * bayesQuality(c.t.rating, 400);
+    // Sin nº de votos en Title se supone un título medio (400), pero los estrenos encogen su nota hacia el prior:
+    // 16 de los 18 «no me interesa» de Víctor son estrenos de 2025-26 con notas de 8 o más (infladas).
+    return (taste.signals < 3 ? 0.3 : 0.6) * aff + 0.3 * bayesQuality(c.t.rating, 400, c.t.year ? `${c.t.year}-07-01` : null);
   };
 
   const picked: Cand[] = [];

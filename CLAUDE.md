@@ -41,6 +41,15 @@ Lee primero `src/lib/reco/types.ts`: describe el diseño y el contrato de las AP
 - `/api/cron/refresh` (Vercel Cron diario, protegido con `CRON_SECRET`) reentrena los tres perfiles.
 - Evaluación offline: `scripts/eval-reco.ts` simula usuarios con gustos ocultos y mide precisión, NDCG, diversidad y novedad. Úsala antes y después de tocar pesos (`TUNING`, `SIGNAL_WEIGHT`, `FAMILY_WEIGHT`) y deja los números en el commit.
 
+## Vistos
+- `ProfileData.seenAt` guarda cuándo se marcó cada visto; el `PUT` del perfil lo valida y conserva fechas que el cliente no envíe. Los vistos antiguos sin fecha toman la del último evento `seen` o salen en «Sin fecha».
+- `GET /api/seen?profile=<id>` resuelve los títulos (más recientes primero) para `SeenView.tsx` (pestaña «Vistos», filtros por tipo y género).
+
+## Agentes especializados (`.claude/agents/`)
+- `algoritmo-reco`: audita y mejora el motor (`src/lib/reco/**`) con datos reales en solo lectura y la evaluación offline (`--engine head` compara con el commit anterior).
+- `ux-tv`: audita y mejora la interfaz con el mando (componentes, CSS, navegación espacial).
+- Cada uno tiene archivos propios para poder trabajar en paralelo; ninguno escribe en producción.
+
 ## App Android TV (`android/`)
 - WebView que carga `BuildConfig.APP_URL`; no contiene lógica de la app. Los cambios de la web **no** requieren nuevo APK.
 - Solo hace falta tocar `android/` para cambiar icono, nombre, URL o el comportamiento del mando. Al hacer push con cambios ahí, GitHub Actions compila y publica una release `apk-vN` (descarga: `/apk` en la web).

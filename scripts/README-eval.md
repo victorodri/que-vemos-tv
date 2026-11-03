@@ -18,3 +18,6 @@ QUEVEMOS_STORE_FILE=.data/eval-store.json npx tsx --conditions=react-server --en
 - `--engine quota`: usa `scripts/variants/engine-quota.ts`, copia del motor con cuota por fuente en la criba
   (hay que regenerarla si cambia `src/lib/reco/engine.ts`).
 - Con gustos tan opuestos, el acierto de pareja es «los dos contentos»: min(uA, uB) ≥ 0,5.
+- `--engine head`: usa `scripts/variants/engine-head.ts`, copia del motor del commit 41121eb, para comparar antes/después
+  en las mismas condiciones. Ejecuta las semillas en serie, no en paralelo: con varios procesos TMDB responde 429
+  y las listas vacías falsean el resultado.

@@ -12,12 +12,13 @@ import { ProfilePicker } from "./ProfilePicker";
 import { Questionnaire, type QuizRatings } from "./Questionnaire";
 import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
+import { SeenView } from "./SeenView";
 import { SettingsView } from "./SettingsView";
-import { focusEl, focusFirst, useSpatialNav } from "./spatialNav";
+import { focusEl, focusFirst, focusables, useSpatialNav } from "./spatialNav";
 import { SurpriseView } from "./SurpriseView";
 import { DetailModal } from "./TitleFeature";
 
-type Tab = "foryou" | "search" | "surprise" | "list" | "settings";
+type Tab = "foryou" | "search" | "surprise" | "list" | "seen" | "settings";
 type Detail = { type: MediaType; id: number; preview?: Title | SavedTitle };
 // El estado de navegación vive en el historial del navegador, así el botón «Atrás» del mando funciona.
 type Nav = { profile: ProfileId | null; tab: Tab; detail: Detail | null };
@@ -30,6 +31,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "search", label: "Buscar" },
   { id: "surprise", label: "🎲 Sorpréndeme" },
   { id: "list", label: "Mi lista" },
+  { id: "seen", label: "Vistos" },
   { id: "settings", label: "Ajustes" },
 ];
 
@@ -51,7 +53,8 @@ export default function App() {
   const [lastUsed, setLastUsed] = useState<string | null>(null);
   const [redoQuiz, setRedoQuiz] = useState(false);
   const dirty = useRef(false);
-  const openerRef = useRef<HTMLElement | null>(null);
+  // Tarjeta que abrió la ficha, y su contenedor y posición por si desaparece mientras tanto (marcada como vista, descartada…).
+  const openerRef = useRef<{ el: HTMLElement; group: Element | null; index: number } | null>(null);
 
   // ---------- Historial ----------
   useEffect(() => {
@@ -117,6 +120,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
+  // Si la app se cierra o pasa a segundo plano antes de que venza el retardo, se guarda ya (keepalive).
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  useEffect(() => {
+    const flush = () => {
+      if (dirty.current && profileRef.current) save(profileRef.current);
+    };
+    const onVisibility = () => document.visibilityState === "hidden" && flush();
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const update = useCallback((fn: (d: ProfileData) => ProfileData) => {
     dirty.current = true;
     setProfile((p) => (p ? { ...p, data: fn(p.data) } : p));
@@ -167,11 +187,17 @@ export default function App() {
         track(t, seen.has(titleKey(t)) ? "unseen" : "seen");
         update((d) => {
           const k = titleKey(t);
-          return d.seen.includes(k) ? { ...d, seen: d.seen.filter((s) => s !== k) } : { ...d, seen: [...d.seen, k] };
+          const seenAt = { ...(d.seenAt ?? {}) };
+          if (d.seen.includes(k)) {
+            delete seenAt[k];
+            return { ...d, seen: d.seen.filter((s) => s !== k), seenAt };
+          }
+          seenAt[k] = Date.now();
+          return { ...d, seen: [...d.seen, k], seenAt };
         });
       },
       setPlatforms: (platforms) => update((d) => ({ ...d, platforms })),
-      clearSeen: () => update((d) => ({ ...d, seen: [] })),
+      clearSeen: () => update((d) => ({ ...d, seen: [], seenAt: {} })),
       setLastFilters: (lastFilters) => update((d) => ({ ...d, lastFilters })),
       feedbackOf: (t) => fb[titleKey(t)]?.s,
       rate: (t, signal) => {
@@ -223,17 +249,25 @@ export default function App() {
   };
 
   const openDetail = (t: Title | SavedTitle) => {
-    openerRef.current = document.activeElement as HTMLElement | null;
+    const el = document.activeElement as HTMLElement | null;
+    const group = el?.closest("[data-nav-group], .grid, .shelf-row") ?? null;
+    openerRef.current = el ? { el, group, index: group ? focusables(group).indexOf(el) : -1 } : null;
     api?.track(t, "open");
     push({ ...nav, detail: { type: t.type, id: t.id, preview: t } });
   };
 
-  // Al cerrar la ficha, el foco vuelve a la tarjeta que la abrió.
+  // Al cerrar la ficha, el foco vuelve a la tarjeta que la abrió; si ya no está (se marcó como vista, se
+  // descartó…), a la que ocupa ahora su lugar en la misma fila o rejilla, para no perder la posición.
   const hadDetail = useRef(false);
   useEffect(() => {
     if (hadDetail.current && !nav.detail) {
-      const el = openerRef.current;
-      requestAnimationFrame(() => (el && document.contains(el) ? focusEl(el) : focusFirst()));
+      const o = openerRef.current;
+      requestAnimationFrame(() => {
+        if (o && document.contains(o.el)) return focusEl(o.el);
+        const items = o?.group && document.contains(o.group) ? focusables(o.group) : [];
+        if (items.length && o) return focusEl(items[Math.min(Math.max(o.index, 0), items.length - 1)]);
+        focusFirst();
+      });
     }
     hadDetail.current = Boolean(nav.detail);
   }, [nav.detail]);
@@ -269,7 +303,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" data-nav-header>
         <h1 className="logo">
           Qué <span>Vemos</span>
         </h1>
@@ -299,6 +333,7 @@ export default function App() {
             {nav.tab === "search" && <SearchView filters={filters} onFilters={setFilters} meta={meta} onOpen={openDetail} />}
             {nav.tab === "surprise" && <SurpriseView filters={filters} onFilters={setFilters} meta={meta} />}
             {nav.tab === "list" && <ListView onOpen={openDetail} />}
+            {nav.tab === "seen" && <SeenView meta={meta} onOpen={openDetail} />}
             {nav.tab === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} />}
           </main>
           {nav.detail && <DetailModal key={`${nav.detail.type}:${nav.detail.id}`} target={nav.detail} onClose={back} />}

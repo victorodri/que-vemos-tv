@@ -6,7 +6,7 @@ import { getProfile, kvGet, kvSet } from "../store";
 import { getProviders, tmdb, toTitle } from "../tmdb";
 import type { MediaType, Title } from "../types";
 import { getManyFeatures, normalize, shallowFeatures } from "./features";
-import { affinity, coupleMembers, dot, getTaste, type Vec } from "./model";
+import { affinity, coupleMembers, cosine, dot, getTaste, type Vec } from "./model";
 import type { ItemFeatures, RecoItem, Shelf, TasteModel } from "./types";
 
 // Recomendador en dos fases, como los de e-commerce:
@@ -14,7 +14,7 @@ import type { ItemFeatures, RecoItem, Shelf, TasteModel } from "./types";
 //   2. Ranking: criba barata con rasgos ligeros → rasgos completos (con caché) para los mejores →
 //      puntuación final (afinidad + calidad + fuente + novedad) → diversificación MMR → explicación.
 
-type Source = "because" | "discover" | "keyword" | "trending" | "gems" | "people";
+type Source = "because" | "discover" | "keyword" | "trending" | "gems" | "people" | "shared";
 
 interface Candidate {
   key: string;
@@ -43,7 +43,9 @@ export const TUNING = {
   wAffinity: 0.6,
   wQuality: 0.25,
   wPopFit: 0.05,
-  sourcePrior: { because: 0.12, people: 0.08, keyword: 0.06, discover: 0.04, trending: 0.05, gems: 0.03 } as Record<Source, number>,
+  sourcePrior: { because: 0.12, people: 0.08, keyword: 0.06, discover: 0.04, trending: 0.05, gems: 0.03, shared: 0.06 } as Record<Source, number>,
+  /** Pareja: recuperar también por cruces de géneros favoritos de cada uno (Acción Y Romance…). */
+  sharedRetrieval: true,
   /** Penalización (o premio) por que el mismo título venga de varias fuentes. */
   multiSourceBonus: 0.04,
   mmrLambda: 0.6, // evaluación offline: mejora diversidad y precisión en todas las personas
@@ -53,16 +55,52 @@ export const TUNING = {
   minAffinity: -0.05,
   bayesM: 200,
   bayesC: 6.6,
+  /** Los estrenos llegan con la nota inflada (votan primero los fans): su prior pesa hasta ×(1+freshShrink). */
+  freshShrink: 3,
+  /** Mínimo de votos para que un «porque te gustó X» de TMDB entre (el grafo trae series con 30 votos). */
+  becauseMinVotes: { movie: 50, tv: 40 } as Record<MediaType, number>, // más alto hunde a los documentales (pocos votos)
+  /** Penalización por palabra clave romántica en series si el perfil evita el romance (las series no tienen ese género). */
+  romanceKwPenalty: 0.07,
+  /** Afinidad mínima con un título que le gustó para explicar «Porque te gustó X» (explicación por ítems). */
+  itemExplainMin: 0.5,
+  /** Pareja: lo que uno de los dos ya vio no se bloquea (puede apetecer verlo juntos), pero baja en la lista. */
+  groupSeenPenalty: 0.15,
+  /** Joyas: limitar a los N idiomas originales que más gustan (0 = sin límite). Sin esto, las series «joya»
+   *  eran casi todas dramas coreanos y chinos con 200 votos, aunque el perfil no hubiera visto ninguno. */
+  gemsLangs: 3,
+  /** Pareja: pesos de la afinidad de grupo (media, mínimo de los dos, vector propio de la pareja). */
+  group: { avg: 0.35, min: 0.35, own: 0.1 },
+  /** Pareja: distribución de géneros con la que se calibra la lista principal. */
+  groupCalibration: "shared" as "union" | "shared" | "none", // evaluación offline: pareja·top 0,38 → 0,46 (media de 3 semillas)
 };
 
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 
-export function bayesQuality(rating: number | null | undefined, votes: number | null | undefined): number {
+/**
+ * Nota bayesiana (media ponderada con un prior de bayesM votos a bayesC). Con `date`, el prior pesa más en los
+ * estrenos: las primeras notas son de fans y bajan con el tiempo (sesgo de autoselección de las primeras
+ * valoraciones, Li y Hitt, «Self-Selection and Information Role of Online Product Reviews», 2008).
+ * Ejemplo real: «Off Campus» (2026, 8,9 con 900 votos) puntuaba como «Los Soprano».
+ */
+export function bayesQuality(rating: number | null | undefined, votes: number | null | undefined, date?: string | null): number {
   const v = votes ?? 0;
   const r = rating ?? TUNING.bayesC;
-  const b = (v / (v + TUNING.bayesM)) * r + (TUNING.bayesM / (v + TUNING.bayesM)) * TUNING.bayesC;
+  const m = TUNING.bayesM * (1 + TUNING.freshShrink * freshness(date));
+  const b = (v / (v + m)) * r + (m / (v + m)) * TUNING.bayesC;
   return clamp((b - 5.5) / 3);
 }
+
+/** 1 = se acaba de estrenar, 0 = tiene dos años o más (o no se sabe). */
+export function freshness(date: string | null | undefined, now = Date.now()): number {
+  if (!date) return 0;
+  const t = Date.parse(date);
+  if (!Number.isFinite(t)) return 0;
+  return clamp(1 - (now - t) / (730 * 86400000));
+}
+
+const releaseDate = (raw: { release_date?: string; first_air_date?: string }) => raw.release_date || raw.first_air_date || null;
+
+const ROMANCE_KW = /^(romance|romantic|romantic comedy|love|first love|forbidden love|love triangle|eternal love|love at first sight|interspecies romance|secret relationship|teen romance|lovers)$/i;
 
 const popNorm = (pop: number | undefined) => clamp(Math.log10((pop ?? 0) + 1) / 3);
 
@@ -100,7 +138,7 @@ function genreIdsFor(type: MediaType, w: Vec): string[] {
   return fromModel.slice(0, 3);
 }
 
-async function gatherCandidates(types: MediaType[], taste: TasteModel, prefs: Prefs | null, platforms: number[]): Promise<Candidate[]> {
+async function gatherCandidates(types: MediaType[], taste: TasteModel, prefs: Prefs | null, platforms: number[], members: TasteModel[] = []): Promise<Candidate[]> {
   const out: Candidate[] = [];
   const push = (items: any[], type: MediaType, source: Source, via?: string) => {
     for (const r of items) {
@@ -112,11 +150,24 @@ async function gatherCandidates(types: MediaType[], taste: TasteModel, prefs: Pr
   const providerParam = platforms.length ? platforms.join("|") : null;
   const avoid = GENRE_GROUPS.filter((g) => prefs?.avoid.includes(g.id));
   const jobs: Promise<void>[] = [];
+  // En la pareja no se aplica: su vector mezcla dos perfiles y la evaluación offline sale peor con el límite.
+  // Solo idiomas con al menos el 20 % del peso del favorito (a Víctor un único «Parásitos» le daba coreano).
+  const langs = TUNING.gemsLangs && taste.signals >= 10 && members.length < 2 ? topFeatures(taste.w, "l", TUNING.gemsLangs, 0.05) : [];
+  const gemsLangs = langs.filter((l) => taste.w[`l:${l}`] >= 0.2 * taste.w[`l:${langs[0]}`]);
 
   // a) «Porque te gustó X»: grafo título→título de TMDB (lo que ven quienes vieron X).
   for (const anchor of taste.anchors.slice(0, 5)) {
     const [t, id] = anchor.split(":");
-    jobs.push(list(`/${t}/${id}/recommendations`, {}, 86400).then((r) => push(r, t as MediaType, "because", anchor)));
+    jobs.push(
+      list(`/${t}/${id}/recommendations`, {}, 86400).then((r) =>
+        push(
+          r.filter((x) => (x.vote_count ?? 0) >= TUNING.becauseMinVotes[x.media_type === "movie" || x.media_type === "tv" ? (x.media_type as MediaType) : (t as MediaType)]),
+          t as MediaType,
+          "because",
+          anchor,
+        ),
+      ),
+    );
   }
 
   for (const type of types) {
@@ -161,8 +212,19 @@ async function gatherCandidates(types: MediaType[], taste: TasteModel, prefs: Pr
         "vote_count.gte": type === "movie" ? 150 : 60,
         "vote_count.lte": type === "movie" ? 2500 : 700,
         "vote_average.gte": 7.2,
+        with_original_language: gemsLangs.length ? gemsLangs.join("|") : null,
       }).then((r) => push(r, type, "gems")),
     );
+    // h) Pareja: cruces «favorito de uno Y favorito del otro» (with_genres con coma = Y en TMDB). La media de
+    //    los dos vectores recupera sobre todo lo que le gusta a uno solo; el cruce busca lo que gusta a los dos.
+    const act = activeMembers(members);
+    if (TUNING.sharedRetrieval && act.length >= 2) {
+      const [ga, gb] = act.slice(0, 2).map((m) => genreIdsFor(type, m.w).slice(0, 2));
+      const pairs = new Set(ga.flatMap((a) => gb.map((b) => (a === b ? a : [a, b].sort().join(",")))));
+      for (const g of pairs) {
+        jobs.push(list(`/discover/${type}`, { ...base, with_genres: g, sort_by: "vote_count.desc" }).then((r) => push(r, type, "shared")));
+      }
+    }
     // e) Tendencias de la semana.
     jobs.push(list(`/trending/${type}/week`, {}, 3 * 3600).then((r) => push(r, type, "trending")));
     // f) Novedades recientes en streaming dentro de sus géneros.
@@ -201,7 +263,7 @@ async function gatherCandidates(types: MediaType[], taste: TasteModel, prefs: Pr
 function dedupe(cands: Candidate[]): Map<string, Candidate & { sources: Set<Source> }> {
   const m = new Map<string, Candidate & { sources: Set<Source> }>();
   // Prioridad de la fuente que se queda como principal (para la explicación).
-  const order: Source[] = ["because", "people", "keyword", "gems", "discover", "trending"];
+  const order: Source[] = ["because", "people", "shared", "keyword", "gems", "discover", "trending"];
   for (const c of cands) {
     const prev = m.get(c.key);
     if (!prev) m.set(c.key, { ...c, sources: new Set([c.source]) });
@@ -227,9 +289,38 @@ function avoidedGenres(prefs: Prefs | null): Record<MediaType, Set<number>> {
  * de grupo, Masthoff 2011): la media de los dos, pero penalizando que a uno no le guste nada.
  */
 function groupAffinity(members: TasteModel[], own: TasteModel, f: Vec): number {
-  const affs = members.map((m) => affinity(m, f));
+  const { avg: wa, min: wm, own: wo } = TUNING.group;
+  const affs = activeMembers(members).map((m) => affinity(m, f));
+  if (!affs.length) return affinity(own, f);
   const avg = affs.reduce((a, b) => a + b, 0) / affs.length;
-  return (0.35 * avg + 0.35 * Math.min(...affs) + 0.1 * affinity(own, f)) / 0.8;
+  return (wa * avg + wm * Math.min(...affs) + wo * affinity(own, f)) / (wa + wm + wo);
+}
+
+/**
+ * Miembros que ya han dado señales. Un miembro sin datos tiene afinidad 0 con todo: si entrara en el
+ * «mínimo de los dos» hundiría cualquier título, así que hasta que valore algo se le ignora (arranque en frío).
+ */
+export function activeMembers(members: TasteModel[]): TasteModel[] {
+  return members.filter((m) => m.signals >= 3);
+}
+
+/**
+ * Géneros objetivo para calibrar la lista de la pareja. La unión de los dos repartos premia una lista con
+ * «lo de él» y «lo de ella» por separado; «shared» se queda con lo que comparten (mínimo por género).
+ */
+function groupGenreTarget(own: TasteModel, members: TasteModel[]): Record<string, number> | undefined {
+  const mode = TUNING.groupCalibration;
+  const act = activeMembers(members).filter((m) => m.genreDist && Object.keys(m.genreDist).length);
+  if (mode === "none") return undefined;
+  if (mode === "union" || act.length < 2) return own.genreDist;
+  const out: Record<string, number> = {};
+  for (const g of Object.keys(act[0].genreDist!)) {
+    const x = Math.min(...act.map((m) => m.genreDist![g] ?? 0));
+    if (x > 0) out[g] = x;
+  }
+  const total = Object.values(out).reduce((a, b) => a + b, 0);
+  for (const g of Object.keys(out)) out[g] /= total || 1;
+  return out;
 }
 
 async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, platforms: number[], members: TasteModel[] = []): Promise<Ranked[]> {
@@ -237,6 +328,7 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
   const aff_ = (f: Vec) => (group ? groupAffinity(members, taste, f) : affinity(taste, f));
   const blocked = new Set(taste.blocked);
   const avoid = avoidedGenres(prefs);
+  const avoidRomance = !!prefs?.avoid.includes("romance");
   const w = taste.w;
   const coldStart = taste.signals < 3;
 
@@ -247,7 +339,7 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
   // Criba barata con rasgos ligeros.
   const stage1 = unique
     .map((c) => {
-      const q = bayesQuality(c.raw.vote_average, c.raw.vote_count);
+      const q = bayesQuality(c.raw.vote_average, c.raw.vote_count, releaseDate(c.raw));
       const aff = aff_(c.shallow);
       const s =
         (coldStart ? 0.35 : TUNING.wAffinity) * aff +
@@ -274,8 +366,12 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
     const aff = aff_(feat?.f ?? c.shallow);
     // La pareja no aplica el umbral: su vector mezcla dos gustos y descartaría casi todo.
     if (!coldStart && !group && aff < TUNING.minAffinity) return;
-    const q = bayesQuality(c.raw.vote_average, c.raw.vote_count);
+    const q = bayesQuality(c.raw.vote_average, c.raw.vote_count, releaseDate(c.raw));
+    // Las series no tienen género «Romance»: si se evita, se mira en sus temas.
+    const romance =
+      avoidRomance && c.type === "tv" && feat ? Object.entries(feat.labels).filter(([k, l]) => k.startsWith("k:") && ROMANCE_KW.test(l)).length : 0;
     const score =
+      -Math.min(3, romance) * TUNING.romanceKwPenalty +
       (coldStart ? 0.35 : TUNING.wAffinity) * aff +
       (coldStart ? 0.45 : TUNING.wQuality) * q +
       TUNING.wPopFit * popFit(c.raw.popularity, prefs) +
@@ -356,7 +452,7 @@ export function mmr<T extends { score: number; feat: ItemFeatures | null; shallo
  * No lee ni escribe perfiles; la usan getShelves y la evaluación offline (scripts/eval-reco.ts).
  */
 export async function recommend(taste: TasteModel, prefs: Prefs | null, platforms: number[], types: MediaType[], members: TasteModel[] = []) {
-  const cands = await gatherCandidates(types, taste, prefs, platforms);
+  const cands = await gatherCandidates(types, taste, prefs, platforms, members);
   return rank(cands, taste, prefs, platforms, members);
 }
 
@@ -366,17 +462,44 @@ export type { Ranked, Source };
 
 const LANG_NAMES: Record<string, string> = { es: "español", ko: "coreano", ja: "japonés", fr: "francés", it: "italiano", de: "alemán", da: "danés", sv: "sueco", no: "noruego", en: "inglés" };
 
-function becauseText(anchor: string, taste: TasteModel, plural: boolean, title: string) {
-  const owner = taste.anchorOwner?.[anchor];
+function becauseText(anchor: string, taste: TasteModel, plural: boolean, title: string, ownerOverride?: string) {
+  const owner = ownerOverride ?? taste.anchorOwner?.[anchor];
   const name = owner ? PROFILES.find((p) => p.id === owner)?.name : null;
   return name ? `Porque a ${name} le gustó «${title}»` : `Porque ${plural ? "os" : "te"} gustó «${title}»`;
 }
 
-function explain(r: Ranked, taste: TasteModel, plural: boolean, anchorTitles: Map<string, string>, personNames: Map<string, string>): string {
+function explain(
+  r: Ranked,
+  taste: TasteModel,
+  plural: boolean,
+  anchorTitles: Map<string, string>,
+  personNames: Map<string, string>,
+  liked: Map<string, ItemFeatures> = new Map(),
+  likedOwner: Map<string, string> = new Map(),
+): string {
   const te = plural ? "os" : "te";
   if (r.source === "because" && r.via && anchorTitles.get(r.via)) return becauseText(r.via, taste, plural, anchorTitles.get(r.via)!);
   if (r.source === "people" && r.via && personNames.get(r.via)) return `Más de ${personNames.get(r.via)}`;
   if (r.source === "gems" && r.quality > 0.6 && (r.raw.vote_count ?? 0) >= 150) return `Joya poco conocida · ★ ${r.title.rating?.toFixed(1)}`;
+
+  // Explicación por ítems: el título que le gustó más parecido a este. Se entiende mejor que un rasgo suelto
+  // («Porque te gusta: Drama» salía en media lista; Herlocker, Konstan y Riedl, «Explaining Collaborative
+  // Filtering Recommendations», 2000).
+  const seenBy = likedOwner.get(r.key);
+  if (seenBy) return `${PROFILES.find((p) => p.id === seenBy)?.name ?? "Uno de los dos"} ya la vio y le gustó`;
+  if (r.feat && r.source !== "trending") {
+    let best: ItemFeatures | null = null;
+    let bestSim = TUNING.itemExplainMin;
+    for (const f of liked.values()) {
+      if (f.key === r.key) continue;
+      const sim = cosine(f.f, r.feat.f);
+      if (sim > bestSim) {
+        bestSim = sim;
+        best = f;
+      }
+    }
+    if (best) return becauseText(best.key, taste, plural, best.title, likedOwner.get(best.key));
+  }
 
   // Rasgo que más aporta a la afinidad.
   const f = r.feat?.f ?? r.shallow;
@@ -413,20 +536,39 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const taste = await getTaste(profileId);
   const types: MediaType[] = type === "all" ? (profile.prefs?.types ?? ["movie", "tv"]) : [type];
   // La clave depende del contenido del modelo (no de cuándo se calculó): reentrenar sin cambios no invalida.
-  const cacheKey = `shelves:v2:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
+  const cacheKey = `shelves:v3:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
   const cached = await kvGet<Shelf[]>(cacheKey).catch(() => null);
   if (cached) return cached;
 
   const plural = profileId === "pareja";
   const memberTastes = await Promise.all(coupleMembers(profileId).map((m) => getTaste(m)));
-  const ranked = await recommend(taste, profile.prefs, profile.platforms, types, memberTastes);
+  const ranked0 = await recommend(taste, profile.prefs, profile.platforms, types, memberTastes);
 
   const anchorFeats = await getManyFeatures(taste.anchors);
   const anchorTitles = new Map([...anchorFeats].map(([k, f]) => [k, f.title]));
+  // Lo que de verdad le gustó (no lo que solo quiere ver), para las explicaciones por ítems.
+  const likedOwner = new Map<string, string>();
+  const positives = (p: typeof profile) =>
+    Object.entries(p.feedback)
+      .filter(([, fb]) => fb.s === "love" || fb.s === "like")
+      .map(([k]) => k);
+  const memberIds = coupleMembers(profileId);
+  const memberProfiles = await Promise.all(memberIds.map((m) => getProfile(m)));
+  const own = new Set(positives(profile));
+  memberProfiles.forEach((p, i) => positives(p).forEach((k) => !own.has(k) && !likedOwner.has(k) && likedOwner.set(k, memberIds[i])));
+  const liked = await getManyFeatures([...own, ...likedOwner.keys()]);
+
+  // Pareja: con un solo miembro activo, «lo mejor para vosotros» se llenaba de lo que Víctor ya había visto
+  // (13 de 20 en su perfil real). Se penaliza en vez de bloquear.
+  const memberSeen = new Set(memberProfiles.flatMap((p) => [...p.seen, ...Object.keys(p.feedback)]));
+  const seenPenalty = (r: Ranked) => (memberSeen.has(r.key) ? TUNING.groupSeenPenalty : 0);
+  const ranked = memberSeen.size
+    ? ranked0.map((r) => ({ ...r, score: r.score - seenPenalty(r) })).sort((a, b) => b.score - a.score)
+    : ranked0;
   const personNames = new Map<string, string>();
   for (const r of ranked) for (const [k, v] of Object.entries(r.feat?.labels ?? {})) if (k.startsWith("c:") || k.startsWith("p:")) personNames.set(k.slice(2), v);
 
-  const reason = (r: Ranked) => explain(r, taste, plural, anchorTitles, personNames);
+  const reason = (r: Ranked) => explain(r, taste, plural, anchorTitles, personNames, liked, likedOwner);
   const shelves: Shelf[] = [];
   const used = new Set<string>();
   const take = (items: Ranked[], n: number, exclude = true) => {
@@ -435,14 +577,13 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   };
 
   // «Para ver juntos»: lo que maximiza el mínimo de afinidad entre los dos miembros.
-  const members = coupleMembers(profileId);
-  if (members.length >= 2) {
-    const mt = await Promise.all(members.map((m) => getTaste(m)));
+  const mt = activeMembers(memberTastes);
+  if (mt.length >= 2) {
     const together = ranked
       .map((r) => {
         const f = r.feat?.f ?? r.shallow;
         const minAff = Math.min(...mt.map((m) => affinity(m, f)));
-        return { r, s: 0.7 * minAff + 0.3 * r.quality };
+        return { r, s: 0.7 * minAff + 0.3 * r.quality - seenPenalty(r) };
       })
       .filter((x) => x.s > 0.1)
       .sort((a, b) => b.s - a.s)
@@ -454,9 +595,12 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
     }
   }
 
-  const top = mmr(take(ranked, 60), 20, TUNING.mmrLambda, taste.genreDist);
+  const calTarget = memberTastes.length >= 2 ? groupGenreTarget(taste, memberTastes) : taste.genreDist;
+  const top = mmr(take(ranked, 60), 20, TUNING.mmrLambda, calTarget);
   shelves.push({ id: "top", title: plural ? "Lo mejor para vosotros" : "Lo mejor para ti", items: top.map((r) => toItem(r, reason(r))) });
   top.slice(0, 8).forEach((r) => used.add(r.key));
+  // Descubrimientos y tendencias no repiten nada de la lista principal (antes compartían 3-4 títulos).
+  const inTop = new Set(top.map((r) => r.key));
 
   for (const anchor of taste.anchors.slice(0, 2)) {
     const items = take(ranked.filter((r) => r.source === "because" && r.via === anchor), 15);
@@ -468,7 +612,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
 
   const discoveries = mmr(
     take(
-      ranked.filter((r) => (r.source === "gems" || r.source === "keyword") && r.affinity > 0.05),
+      ranked.filter((r) => (r.source === "gems" || r.source === "keyword") && r.affinity > 0.05 && !inTop.has(r.key)),
       40,
     ),
     15,
@@ -491,7 +635,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   }
 
   const trend = take(
-    ranked.filter((r) => r.sources.has("trending") && r.affinity > 0.15),
+    ranked.filter((r) => r.sources.has("trending") && r.affinity > 0.15 && !inTop.has(r.key)),
     15,
   );
   if (trend.length >= 4) shelves.push({ id: "trending", title: "Tendencias en España para ti", items: trend.map((r) => toItem(r, "Tendencia esta semana")) });

@@ -50,6 +50,8 @@ export interface ProfileData {
   watchlist: SavedTitle[];
   /** Claves "movie:123" / "tv:456". */
   seen: string[];
+  /** Cuándo se marcó cada vista (epoch ms), clave "movie:123". Los vistos antiguos pueden no tenerla. */
+  seenAt?: Record<string, number>;
   platforms: number[];
   lastFilters: Filters | null;
   /** null hasta que el perfil completa el cuestionario inicial. */
@@ -68,5 +70,8 @@ export interface Meta {
   providers: Provider[];
   storage: "redis" | "local";
 }
+
+/** Un título del listado «Vistos» (GET /api/seen). `seenAt` es null si se marcó antes de guardar fechas. */
+export type SeenItem = Title & { seenAt: number | null };
 
 export const titleKey = (t: { type: MediaType; id: number }) => `${t.type}:${t.id}`;

@@ -11,7 +11,19 @@ export function Rating({ value }: { value: number | null }) {
 
 export const SIGNAL_BADGE: Record<Signal, string> = { love: "❤️", like: "👍", dislike: "👎", not_interested: "🚫" };
 
-export function TitleCard({ title, onOpen }: { title: Title | SavedTitle; onOpen: () => void }) {
+export function TitleCard({
+  title,
+  onOpen,
+  note,
+  hideSeen,
+}: {
+  title: Title | SavedTitle;
+  onOpen: () => void;
+  /** Línea destacada bajo los datos (p. ej. «Vista el 3 nov.»). */
+  note?: string | null;
+  /** No pintar la etiqueta «Vista» (en el listado de vistos sobra). */
+  hideSeen?: boolean;
+}) {
   const profile = useProfile();
   const t = title as Title & Partial<RecoItem>;
   const rated = profile.feedbackOf(t);
@@ -25,9 +37,10 @@ export function TitleCard({ title, onOpen }: { title: Title | SavedTitle; onOpen
         <p className="card-meta">
           {t.year ?? "—"} <Rating value={t.rating} />
           {profile.inList(t) && <span className="badge">En mi lista</span>}
-          {profile.isSeen(t) && <span className="badge badge--seen">Vista</span>}
+          {!hideSeen && profile.isSeen(t) && <span className="badge badge--seen">Vista</span>}
           {rated && <span className="badge badge--rated">{SIGNAL_BADGE[rated]}</span>}
         </p>
+        {note && <p className="card-note">{note}</p>}
         {t.reason && <p className="card-reason">{t.reason}</p>}
         <p className="card-overview">{t.overview || "Sin sinopsis."}</p>
         <ProviderList providers={t.providers} rentOrBuy={t.rentOrBuy} max={5} />

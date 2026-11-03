@@ -12,9 +12,32 @@ export const dynamic = "force-dynamic";
 
 const LIMIT = 2000;
 
+/**
+ * Fechas de «visto»: solo para claves que siguen en `seen`. Se conservan las que ya había (un cliente antiguo
+ * que no envía `seenAt` no las borra) y lo que se marca nuevo sin fecha recibe la de ahora.
+ */
+function sanitizeSeenAt(seen: string[], incoming: unknown, prev: ProfileData): Record<string, number> {
+  const now = Date.now();
+  const valid = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0 && v <= now + 86400000;
+  const fromClient = incoming && typeof incoming === "object" ? (incoming as Record<string, unknown>) : {};
+  const prevSeen = new Set(prev.seen);
+  const out: Record<string, number> = {};
+  for (const k of seen) {
+    const c = fromClient[k];
+    const p = prev.seenAt?.[k];
+    if (valid(c)) out[k] = Math.round(c);
+    else if (valid(p)) out[k] = p;
+    else if (!prevSeen.has(k)) out[k] = now;
+  }
+  return out;
+}
+
 /** Normaliza lo que llega del cliente para no guardar basura. */
-function sanitize(body: Partial<ProfileData>): ProfileData {
+function sanitize(body: Partial<ProfileData>, prev: ProfileData): ProfileData {
   const base = emptyProfile();
+  const seen = Array.isArray(body.seen)
+    ? [...new Set(body.seen.filter((k) => typeof k === "string" && /^(movie|tv):\d+$/.test(k)))].slice(0, LIMIT * 5)
+    : base.seen;
   return {
     watchlist: Array.isArray(body.watchlist)
       ? body.watchlist
@@ -30,7 +53,8 @@ function sanitize(body: Partial<ProfileData>): ProfileData {
             poster: poster ?? null,
           }))
       : base.watchlist,
-    seen: Array.isArray(body.seen) ? body.seen.filter((k) => /^(movie|tv):\d+$/.test(k)).slice(0, LIMIT * 5) : base.seen,
+    seen,
+    seenAt: sanitizeSeenAt(seen, body.seenAt, prev),
     platforms: Array.isArray(body.platforms) ? body.platforms.filter(Number.isInteger).slice(0, 50) : base.platforms,
     lastFilters: body.lastFilters && typeof body.lastFilters === "object" ? paramsToFilters(filtersToParams({ ...DEFAULT_FILTERS, ...body.lastFilters })) : null,
     prefs: sanitizePrefs(body.prefs),
@@ -52,8 +76,9 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/profile/[id]">) 
   const { id } = await ctx.params;
   if (!isProfileId(id)) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
   try {
-    const data = sanitize(await req.json());
+    const body = await req.json();
     const prev = await getProfile(id);
+    const data = sanitize(body, prev);
     await saveProfile(id, data);
     // Solo lista, vistos, gustos y plataformas entrenan el modelo: cambiar filtros no lo reentrena
     // (ni invalida la caché de «Para ti»).

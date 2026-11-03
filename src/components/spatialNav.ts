@@ -17,10 +17,7 @@ function scope(): ParentNode {
 }
 
 function candidates(): HTMLElement[] {
-  return [...scope().querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => {
-    const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
-  });
+  return focusables(scope());
 }
 
 /** Distancia entre dos intervalos (0 si se solapan). */
@@ -56,6 +53,14 @@ function nearest(from: HTMLElement, dir: Dir, items: HTMLElement[]): HTMLElement
     }
   }
   return best;
+}
+
+/** Elementos enfocables visibles dentro de un contenedor, en orden del documento. */
+export function focusables(root: ParentNode): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
 }
 
 export function focusEl(el: HTMLElement | null | undefined) {
@@ -95,6 +100,12 @@ export function useSpatialNav(onBack: () => void) {
       const items = candidates();
       const current = active instanceof HTMLElement && items.includes(active) ? active : null;
       if (!current) return focusFirst();
+      // Al bajar desde la barra de pestañas se entra por el elemento principal de la vista (el de data-autofocus),
+      // no por el que quede justo debajo de la pestaña: así «abajo» siempre lleva al mismo sitio.
+      if (dir === "down" && current.closest("[data-nav-header]")) {
+        const entry = document.querySelector<HTMLElement>("main [data-autofocus]");
+        if (entry && items.includes(entry)) return focusEl(entry);
+      }
       focusEl(nearest(current, dir, items));
     };
     window.addEventListener("keydown", onKey);
