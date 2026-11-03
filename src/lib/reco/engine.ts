@@ -59,8 +59,11 @@ export const TUNING = {
   freshShrink: 3,
   /** Mínimo de votos para que un «porque te gustó X» de TMDB entre (el grafo trae series con 30 votos). */
   becauseMinVotes: { movie: 50, tv: 40 } as Record<MediaType, number>, // más alto hunde a los documentales (pocos votos)
-  /** Penalización por palabra clave romántica en series si el perfil evita el romance (las series no tienen ese género). */
-  romanceKwPenalty: 0.07,
+  /**
+   * Penalización por indicio romántico en series si el perfil evita el romance (las series no tienen ese género):
+   * palabra clave o sinopsis romántica = 1, palabra clave o sinopsis de drama juvenil = 0,5; máximo 3.
+   */
+  romanceKwPenalty: 0.12,
   /** Afinidad mínima con un título que le gustó para explicar «Porque te gustó X» (explicación por ítems). */
   itemExplainMin: 0.5,
   /** Pareja: lo que uno de los dos ya vio no se bloquea (puede apetecer verlo juntos), pero baja en la lista. */
@@ -100,7 +103,19 @@ export function freshness(date: string | null | undefined, now = Date.now()): nu
 
 const releaseDate = (raw: { release_date?: string; first_air_date?: string }) => raw.release_date || raw.first_air_date || null;
 
-const ROMANCE_KW = /^(romance|romantic|romantic comedy|love|first love|forbidden love|love triangle|eternal love|love at first sight|interspecies romance|secret relationship|teen romance|lovers)$/i;
+const ROMANCE_KW = /^(romance|romantic|romantic comedy|love|first love|forbidden love|love triangle|eternal love|love at first sight|interspecies romance|secret relationship|teen romance|lovers|toxic relationship|relationship|dating|sexuality)$/i;
+// El grafo de TMDB lleva de un drama de prestigio a dramas juveniles casi siempre románticos (Pequeñas mentirosas, Tell Me Lies…).
+const TEEN_KW = /^(teen drama|teenager|high school|college|university|based on young adult novel|young adult|coming of age|teen)$/i;
+// TMDB etiqueta mal muchas series: la sinopsis en español delata el romance que no dicen las palabras clave.
+const ROMANCE_TEXT = /\b(romance|romántic\w*|enamor\w*|amor(es|osa|oso)?|relaci[oó]n (tóxica|sentimental|amorosa)|triángulo amoroso|su relación|novi[oa]s?|seducción|pasión|atracción)\b/i;
+const TEEN_TEXT = /\b(universidad|universitari\w*|instituto|adolescen\w*|campus)\b/i;
+
+/** Indicios de romance en una serie (0..3), para quien lo evita. */
+function romanceHints(feat: ItemFeatures): number {
+  const kws = Object.entries(feat.labels).filter(([k]) => k.startsWith("k:")).map(([, l]) => l);
+  const n = kws.filter((l) => ROMANCE_KW.test(l)).length + 0.5 * kws.filter((l) => TEEN_KW.test(l)).length + (ROMANCE_TEXT.test(feat.overview) ? 1 : 0) + (TEEN_TEXT.test(feat.overview) ? 0.5 : 0);
+  return Math.min(3, n);
+}
 
 const popNorm = (pop: number | undefined) => clamp(Math.log10((pop ?? 0) + 1) / 3);
 
@@ -368,10 +383,9 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
     if (!coldStart && !group && aff < TUNING.minAffinity) return;
     const q = bayesQuality(c.raw.vote_average, c.raw.vote_count, releaseDate(c.raw));
     // Las series no tienen género «Romance»: si se evita, se mira en sus temas.
-    const romance =
-      avoidRomance && c.type === "tv" && feat ? Object.entries(feat.labels).filter(([k, l]) => k.startsWith("k:") && ROMANCE_KW.test(l)).length : 0;
+    const romance = avoidRomance && c.type === "tv" && feat ? romanceHints(feat) : 0;
     const score =
-      -Math.min(3, romance) * TUNING.romanceKwPenalty +
+      -romance * TUNING.romanceKwPenalty +
       (coldStart ? 0.35 : TUNING.wAffinity) * aff +
       (coldStart ? 0.45 : TUNING.wQuality) * q +
       TUNING.wPopFit * popFit(c.raw.popularity, prefs) +
@@ -536,7 +550,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const taste = await getTaste(profileId);
   const types: MediaType[] = type === "all" ? (profile.prefs?.types ?? ["movie", "tv"]) : [type];
   // La clave depende del contenido del modelo (no de cuándo se calculó): reentrenar sin cambios no invalida.
-  const cacheKey = `shelves:v3:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
+  const cacheKey = `shelves:v4:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
   const cached = await kvGet<Shelf[]>(cacheKey).catch(() => null);
   if (cached) return cached;
 
