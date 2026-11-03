@@ -107,8 +107,8 @@ const ROMANCE_KW = /^(romance|romantic|romantic comedy|love|first love|forbidden
 // El grafo de TMDB lleva de un drama de prestigio a dramas juveniles casi siempre románticos (Pequeñas mentirosas, Tell Me Lies…).
 const TEEN_KW = /^(teen drama|teenager|high school|college|university|based on young adult novel|young adult|coming of age|teen)$/i;
 // TMDB etiqueta mal muchas series: la sinopsis en español delata el romance que no dicen las palabras clave.
-const ROMANCE_TEXT = /\b(romance|romántic\w*|enamor\w*|amor(es|osa|oso)?|relaci[oó]n (tóxica|sentimental|amorosa)|triángulo amoroso|su relación|novi[oa]s?|seducción|pasión|atracción)\b/i;
-const TEEN_TEXT = /\b(universidad|universitari\w*|instituto|adolescen\w*|campus)\b/i;
+const ROMANCE_TEXT = /\b(romance|romances|romántic\w*|enamor\w*|amor(es|os[oa]s?)?|relaci(ó|o)n(es)? (tóxicas?|sentimental(es)?|amoros[oa]s?)|triángulo amoroso|su relación|novi[oa]s?|seducción|matrimonio de conveniencia)(?![\wáéíóúñ])/i;
+const TEEN_TEXT = /\b(universidad|universitari\w*|instituto|adolescen\w*|campus)(?![\wáéíóúñ])/i;
 
 /** Indicios de romance en una serie (0..3), para quien lo evita. */
 function romanceHints(feat: ItemFeatures): number {
@@ -550,7 +550,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const taste = await getTaste(profileId);
   const types: MediaType[] = type === "all" ? (profile.prefs?.types ?? ["movie", "tv"]) : [type];
   // La clave depende del contenido del modelo (no de cuándo se calculó): reentrenar sin cambios no invalida.
-  const cacheKey = `shelves:v4:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
+  const cacheKey = `shelves:v5:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
   const cached = await kvGet<Shelf[]>(cacheKey).catch(() => null);
   if (cached) return cached;
 
