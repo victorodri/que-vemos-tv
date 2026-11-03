@@ -75,8 +75,9 @@ function horizontal(from: Box, dir: "left" | "right", all: Box[]): HTMLElement |
 function vertical(from: Box, dir: "up" | "down", all: Box[]): HTMLElement | null {
   const r = from.r;
   let cands = all.filter((b) => b.el !== from.el && (dir === "down" ? b.r.top > r.top + r.height * 0.5 : b.r.bottom < r.bottom - r.height * 0.5));
-  // La cabecera es fija: al subir, «parece» lo más cercano aunque haya filas ocultas encima. Solo cuenta si no hay nada más.
-  if (dir === "up" && !inHeader(from.el)) {
+  // La cabecera es fija: al subir (o al bajar, en el móvil, donde va abajo) «parece» lo más cercano aunque haya
+  // contenido oculto más allá. Solo cuenta si no hay nada más.
+  if (!inHeader(from.el)) {
     const body = cands.filter((b) => !inHeader(b.el));
     if (body.length) cands = body;
   }

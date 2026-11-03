@@ -75,3 +75,7 @@ export interface Meta {
 export type SeenItem = Title & { seenAt: number | null };
 
 export const titleKey = (t: { type: MediaType; id: number }) => `${t.type}:${t.id}`;
+export const parseTitleKey = (k: string): { type: MediaType; id: number } => {
+  const [type, id] = k.split(":");
+  return { type: type as MediaType, id: Number(id) };
+};

@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { getJSON, hashOf } from "@/lib/client";
+import * as engage from "@/lib/engage";
 import type { RecoItem, Shelf } from "@/lib/reco/types";
 import { titleKey, type Title } from "@/lib/types";
 import { NewReleasesSpotlight } from "./NewReleasesSpotlight";
 import { useProfile } from "./profileContext";
 import { SocialCountsContext, SocialPulse, socialLabel, useActivity, useSocialCount } from "./SocialPulse";
+import { SurveyCard } from "./SurveyCard";
 import { Rating, SIGNAL_BADGE } from "./TitleCard";
 
 type Kind = "movie" | "tv" | "all";
@@ -19,6 +21,7 @@ export function PosterCard({ item, onOpen, autofocus }: { item: RecoItem; onOpen
   return (
     <button
       className="poster-card"
+      data-key={titleKey(item)}
       onClick={onOpen}
       aria-label={[item.title, item.reason, socialText].filter(Boolean).join(". ")}
       data-autofocus={autofocus || undefined}
@@ -54,6 +57,14 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  // Cada apertura de la app (sesión) trae tiras y portada nuevas; al volver tras un rato, se renuevan solas.
+  const [session, setSession] = useState(() => engage.sessionId());
+  useEffect(() => {
+    const off = engage.onNewSession(() => setSession(engage.sessionId()));
+    return () => {
+      off();
+    };
+  }, []);
   const pareja = profile.plural;
   // Actividad de otros perfiles: franja «En QuéVer» y contadores «👥» de las tarjetas.
   const { data: activity } = useActivity(profile.id, 24, String(reload));
@@ -74,12 +85,12 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
     ctrlRef.current = ctrl;
     setLoading(true);
     setError(null);
-    getJSON<{ shelves: Shelf[] }>(`/api/reco?profile=${profile.id}&type=${kind}&v=${stableSig}.${reload}`, ctrl.signal)
+    getJSON<{ shelves: Shelf[] }>(`/api/reco?profile=${profile.id}&type=${kind}&session=${session}${reload ? `.${reload}` : ""}&v=${stableSig}`, ctrl.signal)
       .then((r) => setShelves(r.shelves ?? []))
       .catch((e) => !ctrl.signal.aborted && setError((e as Error).message))
       .finally(() => !ctrl.signal.aborted && setLoading(false));
     return () => ctrl.abort();
-  }, [profile.id, kind, stableSig, reload]);
+  }, [profile.id, kind, stableSig, reload, session]);
 
   // Respuesta inmediata: lo que se acaba de descartar o marcar como visto desaparece sin esperar al servidor.
   const visible = (shelves ?? [])
@@ -123,6 +134,7 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
           </div>
         </div>
 
+        {shelves !== null && <SurveyCard session={session} onChanged={() => setReload((n) => n + 1)} />}
         <SocialPulse data={activity} onOpen={onOpen} plural={pareja} />
         <NewReleasesSpotlight onOpen={onOpen} />
 
@@ -133,17 +145,73 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
         )}
 
         {visible.map((shelf) => (
-          <section key={shelf.id + shelf.title} className="shelf" aria-label={shelf.title}>
-            <h3 className="shelf-title">{shelf.title}</h3>
-            <div className="shelf-row">
-              {shelf.items.map((item) => (
-                <PosterCard key={titleKey(item)} item={item} onOpen={() => onOpen(item)} />
-              ))}
-            </div>
-          </section>
+          <ShelfSection key={shelf.id + shelf.title} shelf={shelf} onOpen={onOpen} />
         ))}
         {shelves !== null && loading && <p className="hint shelf-updating">Actualizando…</p>}
       </div>
     </SocialCountsContext.Provider>
+  );
+}
+
+/**
+ * Una tira de «Para ti». Cuenta como vista cuando entra en pantalla (y los títulos que se ven en ella, también al
+ * desplazarla): así se sabe qué tiras se ignoran y qué títulos han pasado ya demasiadas veces sin abrirse.
+ */
+function ShelfSection({ shelf, onOpen }: { shelf: Shelf; onOpen: (t: Title) => void }) {
+  const ref = useRef<HTMLElement>(null);
+  const fam = shelf.key ?? shelf.id;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;
+      const keys = [...el.querySelectorAll<HTMLElement>("[data-key]")]
+        .filter((c) => {
+          const b = c.getBoundingClientRect();
+          return b.right > 0 && b.left < innerWidth;
+        })
+        .map((c) => c.dataset.key!);
+      engage.viewShelf(fam, shelf.title, keys);
+    };
+    let t: ReturnType<typeof setTimeout> | undefined;
+    // Solo cuenta si se queda en pantalla un momento (no al pasar de largo con el scroll).
+    const io = new IntersectionObserver(
+      ([e]) => {
+        clearTimeout(t);
+        if (e.isIntersecting) t = setTimeout(report, 700);
+      },
+      { threshold: 0.6 },
+    );
+    io.observe(el);
+    const row = el.querySelector(".shelf-row");
+    const onScroll = () => {
+      clearTimeout(t);
+      t = setTimeout(report, 700);
+    };
+    row?.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(t);
+      io.disconnect();
+      row?.removeEventListener("scroll", onScroll);
+    };
+  }, [fam, shelf.title, shelf.items]);
+
+  return (
+    <section ref={ref} className="shelf" aria-label={shelf.title}>
+      <h3 className="shelf-title">{shelf.title}</h3>
+      <div className="shelf-row">
+        {shelf.items.map((item) => (
+          <PosterCard
+            key={titleKey(item)}
+            item={item}
+            onOpen={() => {
+              engage.setOrigin(fam);
+              onOpen(item);
+            }}
+          />
+        ))}
+      </div>
+    </section>
   );
 }

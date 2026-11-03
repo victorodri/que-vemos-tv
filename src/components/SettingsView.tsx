@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { setSoundEnabled, soundEnabled } from "@/lib/sound";
 import type { Meta } from "@/lib/types";
+import { InsightsView } from "./InsightsView";
 import { useProfile } from "./profileContext";
 
 export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: () => void; onForget: () => void }) {
@@ -19,11 +20,13 @@ export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: (
 
   return (
     <div className="view">
+      <InsightsView />
+
       <h2>Mis plataformas</h2>
       <p className="hint">Marca las que tenéis contratadas y usa el filtro «Solo las mías».</p>
       <div className="platforms">
-        {meta.providers.map((p, i) => (
-          <button key={p.id} className="platform" aria-pressed={platforms.includes(p.id)} onClick={() => toggle(p.id)} data-autofocus={i === 0 || undefined}>
+        {meta.providers.map((p) => (
+          <button key={p.id} className="platform" aria-pressed={platforms.includes(p.id)} onClick={() => toggle(p.id)}>
             {p.logo && <img src={p.logo} alt="" />}
             <span>{p.name}</span>
           </button>

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_FILTERS } from "@/lib/filters";
+import * as engage from "@/lib/engage";
 import type { Prefs } from "@/lib/prefs";
 import type { ImplicitEvent, Signal } from "@/lib/reco/types";
 import { authHeaders, getJSON, HttpError, rememberToken, sendJSON, setActiveToken, tokenOf, toSaved } from "@/lib/client";
@@ -53,7 +54,7 @@ const TABS: { id: Tab; label: string; short: string; icon: string }[] = [
   { id: "community", label: "Comunidad", short: "Gente", icon: "👥" },
   { id: "list", label: "Mi lista", short: "Lista", icon: "🔖" },
   { id: "seen", label: "Vistos", short: "Vistos", icon: "👁" },
-  { id: "settings", label: "Ajustes", short: "Ajustes", icon: "⚙️" },
+  { id: "settings", label: "Mi perfil", short: "Perfil", icon: "👤" },
 ];
 
 /**
@@ -79,6 +80,9 @@ type ProfilesRes = { profiles: PublicProfile[]; suggested: string | null; emojis
 
 export default function App() {
   const [nav, setNav] = useState<Nav>(HOME);
+  // Pestaña actual para atribuir lo que se guarda o valora (fuera de «Para ti» no hay tira de origen).
+  const tabRef = useRef<string>("foryou");
+  tabRef.current = nav.tab ?? "foryou";
   // Perfiles de la app, el propuesto para esta red y, si toca, el alta o el PIN que se está pidiendo.
   const [registry, setRegistry] = useState<ProfilesRes | null>(null);
   const [registryError, setRegistryError] = useState<string | null>(null);
@@ -253,6 +257,7 @@ export default function App() {
     setActiveToken(tokenOf(id));
     getJSON<ProfileData>(`/api/profile/${id}`).then(
       (data) => {
+        engage.beginSession(id);
         setProfile({ id, data });
         setFiltersState({ ...DEFAULT_FILTERS, ...data.lastFilters });
       },
@@ -336,6 +341,7 @@ export default function App() {
       inList: (t) => listed.has(titleKey(t)),
       isSeen: (t) => seen.has(titleKey(t)),
       toggleList: (t) => {
+        if (!listed.has(titleKey(t))) engage.track(titleKey(t), "want", tabRef.current);
         track(t, listed.has(titleKey(t)) ? "unwant" : "want");
         update((d) => {
           const k = titleKey(t);
@@ -345,6 +351,7 @@ export default function App() {
         });
       },
       toggleSeen: (t) => {
+        if (!seen.has(titleKey(t))) engage.track(titleKey(t), "seen", tabRef.current);
         track(t, seen.has(titleKey(t)) ? "unseen" : "seen");
         update((d) => {
           const k = titleKey(t);
@@ -364,6 +371,7 @@ export default function App() {
       rate: (t, signal) => {
         const k = titleKey(t);
         const next = signal && fb[k]?.s !== signal ? signal : null;
+        if (next) engage.track(k, next, tabRef.current);
         sendFeedback(id, t, { signal: next });
         update((d) => {
           const feedback = { ...(d.feedback ?? {}) };
@@ -439,6 +447,7 @@ export default function App() {
     const group = el?.closest("[data-nav-group], .grid, .shelf-row") ?? null;
     openerRef.current = el && el !== document.body ? { el, group, index: group ? focusables(group).indexOf(el) : -1, scrollY: window.scrollY } : { el: document.body, group: null, index: -1, scrollY: window.scrollY };
     api?.track(t, "open");
+    engage.track(titleKey(t), "open", nav.tab);
     push({ ...nav, detail: { type: t.type, id: t.id, preview: t } });
   };
 

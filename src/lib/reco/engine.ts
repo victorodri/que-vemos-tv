@@ -605,7 +605,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   // La clave depende del contenido del modelo (no de cuándo se calculó): reentrenar sin cambios no invalida.
   // Lo que gusta a los perfiles parecidos también cambia las estanterías (aunque este perfil no haya hecho nada).
   const picks = await communityPicks(profileId, taste).catch(() => [] as CommunityPick[]);
-  const cacheKey = `shelves:v7:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms, picks.map((p) => p.key + p.owner)])}`;
+  const cacheKey = `shelves:v8:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms, picks.map((p) => p.key + p.owner)])}`;
   const cached = await kvGet<Shelf[]>(cacheKey).catch(() => null);
   if (cached) return cached;
 
@@ -660,33 +660,35 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
       .filter((x) => x.s > 0.1)
       .sort((a, b) => b.s - a.s)
       .map((x) => x.r);
-    const items = mmr(take(together, 40), 15);
+    const items = mmr(take(together, 50), 24);
     if (items.length >= 4) {
-      shelves.push({ id: "together", title: "Para ver juntos", items: items.map((r) => toItem(r, "Os puede gustar a los dos")) });
+      shelves.push({ id: "together", key: "together", title: "Para ver juntos", items: items.map((r) => toItem(r, "Os puede gustar a los dos")) });
       items.slice(0, 6).forEach((r) => used.add(r.key));
     }
   }
 
   const calTarget = memberTastes.length >= 2 ? groupGenreTarget(taste, memberTastes) : taste.genreDist;
-  const top = mmr(take(ranked, 60), 20, TUNING.mmrLambda, calTarget);
-  shelves.push({ id: "top", title: plural ? "Lo mejor para vosotros" : "Lo mejor para ti", items: top.map((r) => toItem(r, reason(r))) });
+  // Más candidatos de los que se enseñan: engagement.ts rota la portada en cada apertura.
+  const top = mmr(take(ranked, 70), 32, TUNING.mmrLambda, calTarget);
+  shelves.push({ id: "top", key: "top", title: plural ? "Lo mejor para vosotros" : "Lo mejor para ti", items: top.map((r) => toItem(r, reason(r))) });
   top.slice(0, 8).forEach((r) => used.add(r.key));
 
   // Red de QuéVer: lo que les encantó a los perfiles más parecidos.
   // Puede repetir algo de la lista principal: saber que a alguien parecido le encantó también es información.
   const fromCommunity = mmr(
     ranked.filter((r) => r.sources.has("community")).map((r) => (r.source === "community" ? r : { ...r, source: "community" as Source, via: communityById.get(r.key)?.owner })),
-    15,
+    24,
   );
   if (fromCommunity.length >= 3)
-    shelves.push({ id: "community", title: plural ? "A perfiles como el vuestro les encantó" : "A perfiles como el tuyo les encantó", items: fromCommunity.map((r) => toItem(r, reason(r))) });
+    shelves.push({ id: "community", key: "community", title: plural ? "A perfiles como el vuestro les encantó" : "A perfiles como el tuyo les encantó", items: fromCommunity.map((r) => toItem(r, reason(r))) });
   // Descubrimientos y tendencias no repiten nada de la lista principal (antes compartían 3-4 títulos).
   const inTop = new Set(top.map((r) => r.key));
 
-  for (const anchor of taste.anchors.slice(0, 2)) {
-    const items = take(ranked.filter((r) => r.source === "because" && r.via === anchor), 15);
+  // Varias «Porque te gustó…»: engagement.ts enseña 2 por sesión, rotando y según cuáles se usan.
+  for (const anchor of taste.anchors.slice(0, 5)) {
+    const items = take(ranked.filter((r) => r.source === "because" && r.via === anchor), 24);
     if (items.length >= 4 && anchorTitles.get(anchor)) {
-      shelves.push({ id: "because", title: becauseText(anchor, taste, plural, anchorTitles.get(anchor)!), items: items.map((r) => toItem(r, reason(r))) });
+      shelves.push({ id: "because", key: `because:${anchor}`, title: becauseText(anchor, taste, plural, anchorTitles.get(anchor)!), items: items.map((r) => toItem(r, reason(r))) });
       items.slice(0, 4).forEach((r) => used.add(r.key));
     }
   }
@@ -694,12 +696,12 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const discoveries = mmr(
     take(
       ranked.filter((r) => (r.source === "gems" || r.source === "keyword") && r.affinity > 0.05 && !inTop.has(r.key)),
-      40,
+      50,
     ),
-    15,
+    24,
   );
   if (discoveries.length >= 4) {
-    shelves.push({ id: "discover", title: "Descubrimientos", items: discoveries.map((r) => toItem(r, reason(r))) });
+    shelves.push({ id: "discover", key: "discover", title: "Descubrimientos", items: discoveries.map((r) => toItem(r, reason(r))) });
     discoveries.slice(0, 4).forEach((r) => used.add(r.key));
   }
 
@@ -708,18 +710,18 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   for (const r of peopleItems) byPerson.set(r.via!, [...(byPerson.get(r.via!) ?? []), r]);
   for (const [pid, items] of byPerson) {
     const name = personNames.get(pid);
-    const list = take(items, 15);
+    const list = take(items, 24);
     if (name && list.length >= 4) {
-      shelves.push({ id: "people", title: `Más de ${name}`, items: list.map((r) => toItem(r, reason(r))) });
-      break;
+      shelves.push({ id: "people", key: `people:${pid}`, title: `Más de ${name}`, items: list.map((r) => toItem(r, reason(r))) });
+      if (shelves.filter((s) => s.id === "people").length >= 3) break;
     }
   }
 
   const trend = take(
     ranked.filter((r) => r.sources.has("trending") && r.affinity > 0.15 && !inTop.has(r.key)),
-    15,
+    24,
   );
-  if (trend.length >= 4) shelves.push({ id: "trending", title: "Tendencias en España para ti", items: trend.map((r) => toItem(r, "Tendencia esta semana")) });
+  if (trend.length >= 4) shelves.push({ id: "trending", key: "trending", title: "Tendencias en España para ti", items: trend.map((r) => toItem(r, "Tendencia esta semana")) });
 
   await kvSet(cacheKey, shelves, SHELVES_TTL).catch(() => {});
   // Las críticas de lo recomendado (y de lo que le gustó) se calculan después de responder, para la próxima vez.

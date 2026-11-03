@@ -88,7 +88,7 @@ export interface TasteModel {
   version: number;
 }
 
-export type ShelfId = "top" | "because" | "discover" | "trending" | "gems" | "people" | "together" | "community";
+export type ShelfId = "top" | "because" | "discover" | "trending" | "gems" | "people" | "together" | "community" | "today";
 
 /** Un título recomendado, con su explicación. */
 export interface RecoItem extends Title {
@@ -99,6 +99,8 @@ export interface RecoItem extends Title {
 
 export interface Shelf {
   id: ShelfId;
+  /** Identidad estable de la tira para medir su uso: «because:movie:98», «people:525», o el id. */
+  key?: string;
   title: string;
   items: RecoItem[];
 }
