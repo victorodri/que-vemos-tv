@@ -66,6 +66,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "apk-v${{ github.run_number }}" que-vemos-tv.apk \
-            --title "Qué Vemos TV · versión 1.0.${{ github.run_number }}" \
+            --title "QuéVer TV · versión 1.2.${{ github.run_number }}" \
             --notes "APK para Fire TV / Android TV. Carga $APP_URL" \
             --latest
