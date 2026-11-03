@@ -8,11 +8,12 @@
   --accent: #ffc83d;
   --accent-ink: #1a1400;
   --danger: #ff6b6b;
-  --radius: 0.9rem;
-  --focus: 0 0 0 0.25rem var(--accent), 0 0 2rem rgba(255, 200, 61, 0.35);
+  --radius: 0.7rem;
+  /* Foco: anillo amarillo grueso + halo. Se mantiene fuerte aunque el resto de la interfaz sea más fina. */
+  --focus: 0 0 0 0.2rem var(--accent), 0 0 1.4rem rgba(255, 200, 61, 0.4);
   /* Márgenes de seguridad por el overscan de algunas teles. */
-  --safe-x: max(1rem, 4vw);
-  --safe-y: max(0.75rem, 3vh);
+  --safe-x: max(1rem, 3.5vw);
+  --safe-y: max(0.6rem, 2.5vh);
   color-scheme: dark;
 }
 
@@ -21,8 +22,9 @@
 }
 
 html {
-  /* ~18px en 960px de ancho (Fire TV), ~30px en 1920px. */
-  font-size: clamp(16px, 1.25vw + 6px, 32px);
+  /* Escala casi proporcional al ancho, para que la tele vea lo mismo a 960 (Fire TV), 1280 o 1920 px:
+     ~14px en 960, ~18px en 1280, ~25px en 1920. */
+  font-size: clamp(14px, 1.15vw + 3px, 28px);
 }
 
 body {
@@ -66,7 +68,7 @@ button:disabled {
 button,
 input,
 a {
-  scroll-margin: 6rem 2rem 2rem;
+  scroll-margin: 5rem 2rem 2rem;
   outline: none;
   transition:
     transform 0.12s ease,
@@ -82,7 +84,7 @@ input:focus {
 
 /* ---------- Logo y cabecera ---------- */
 .logo {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -91,7 +93,7 @@ input:focus {
   color: var(--accent);
 }
 .logo--big {
-  font-size: 3.2rem;
+  font-size: 2.6rem;
 }
 
 .app {
@@ -105,14 +107,14 @@ input:focus {
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: var(--safe-y) 0 0.9rem;
-  background: linear-gradient(var(--bg) 75%, transparent);
+  gap: 0.8rem;
+  padding: var(--safe-y) 0 0.5rem;
+  background: linear-gradient(var(--bg) 78%, transparent);
 }
 
 .tabs {
   display: flex;
-  gap: 0.2rem;
+  gap: 0.15rem;
   flex: 1;
   overflow-x: auto;
   scrollbar-width: none;
@@ -120,12 +122,32 @@ input:focus {
 }
 
 .tab {
-  padding: 0.55rem 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.38rem 0.7rem;
   border-radius: 999px;
-  font-size: 1.05rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
+}
+.tab-icon,
+.tab-short {
+  display: none;
+}
+.tab-count {
+  min-width: 1.3em;
+  padding: 0 0.35em;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.75em;
+  line-height: 1.5;
+  text-align: center;
+}
+.tab[aria-current="page"] .tab-count {
+  background: var(--bg);
 }
 .tab[aria-current="page"] {
   background: var(--surface-2);
@@ -139,8 +161,10 @@ input:focus {
 .who {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.35rem 0.9rem 0.35rem 0.35rem;
+  gap: 0.5rem;
+  padding: 0.25rem 0.8rem 0.25rem 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
   border-radius: 999px;
   background: var(--surface);
   white-space: nowrap;
@@ -149,17 +173,17 @@ input:focus {
 .avatar {
   display: grid;
   place-items: center;
-  width: 7rem;
-  height: 7rem;
+  width: 5.6rem;
+  height: 5.6rem;
   border-radius: 50%;
   font-weight: 800;
-  font-size: 2.2rem;
+  font-size: 1.9rem;
   color: #111;
 }
 .avatar--small {
-  width: 2.2rem;
-  height: 2.2rem;
-  font-size: 0.8rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: 0.75rem;
 }
 
 /* ---------- Selector de perfil ---------- */
@@ -173,32 +197,32 @@ input:focus {
   padding: var(--safe-y) var(--safe-x);
 }
 .picker-question {
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   color: var(--muted);
 }
 .profiles {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 2rem;
-  margin-top: 1rem;
+  gap: 1.4rem;
+  margin-top: 0.6rem;
 }
 .profile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  padding: 1.5rem 2rem;
-  border-radius: 1.5rem;
+  gap: 0.7rem;
+  padding: 1.1rem 1.5rem;
+  border-radius: 1.2rem;
   background: var(--surface);
-  min-width: 13rem;
+  min-width: 10.5rem;
 }
 .profile:focus {
   transform: scale(1.08);
   background: var(--surface-2);
 }
 .profile-name {
-  font-size: 1.4rem;
+  font-size: 1.15rem;
   font-weight: 700;
 }
 
@@ -206,39 +230,39 @@ input:focus {
 .view {
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
-  padding-top: 0.5rem;
+  gap: 0.9rem;
+  padding-top: 0.4rem;
 }
 .view h2 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
 }
 
 .hint {
   color: var(--muted);
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 .warn {
   color: var(--accent);
 }
 .error {
   color: var(--danger);
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   padding: 0.5rem 0;
 }
 .loading,
 .empty {
   color: var(--muted);
-  font-size: 1.2rem;
-  padding: 1.5rem 0;
+  font-size: 1.05rem;
+  padding: 1.2rem 0;
   text-align: center;
 }
 
 /* ---------- Botones ---------- */
 .btn {
-  padding: 0.7rem 1.3rem;
+  padding: 0.5rem 1rem;
   border-radius: var(--radius);
   background: var(--surface-2);
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -249,15 +273,19 @@ input:focus {
   background: var(--accent);
   color: var(--accent-ink);
 }
+/* Amarillo sobre amarillo no se ve: el foco del botón principal lleva un hueco oscuro antes del anillo. */
+.btn--primary:focus {
+  box-shadow: 0 0 0 0.16rem var(--bg), 0 0 0 0.36rem var(--accent), 0 0 1.4rem rgba(255, 200, 61, 0.45);
+}
 .btn--big {
-  font-size: 1.5rem;
-  padding: 1rem 2.2rem;
+  font-size: 1.2rem;
+  padding: 0.75rem 1.6rem;
 }
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.8rem;
-  margin-top: 0.4rem;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
 }
 .more {
   display: flex;
@@ -267,16 +295,16 @@ input:focus {
 /* ---------- Buscador ---------- */
 .search {
   display: flex;
-  gap: 0.8rem;
+  gap: 0.6rem;
 }
 .search-input {
   flex: 1;
   min-width: 0;
-  padding: 0.7rem 1.1rem;
+  padding: 0.5rem 0.9rem;
   border-radius: var(--radius);
   border: 2px solid var(--surface-2);
   background: var(--surface);
-  font-size: 1.2rem;
+  font-size: 1rem;
 }
 .search-input:focus {
   border-color: var(--accent);
@@ -286,28 +314,28 @@ input:focus {
 .filters {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.15rem;
   background: var(--surface);
   border-radius: var(--radius);
-  padding: 0.6rem 0.9rem;
+  padding: 0.4rem 0.8rem;
 }
 .filter-row {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.7rem;
 }
 .filter-label {
-  flex: 0 0 5.5rem;
+  flex: 0 0 4.8rem;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   font-weight: 600;
 }
 .chips {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   overflow-x: auto;
   scrollbar-width: none;
-  padding: 0.35rem;
+  padding: 0.3rem;
   min-width: 0;
 }
 .chips::-webkit-scrollbar,
@@ -315,10 +343,10 @@ input:focus {
   display: none;
 }
 .chip {
-  padding: 0.4rem 0.95rem;
+  padding: 0.3rem 0.8rem;
   border-radius: 999px;
   background: var(--surface-2);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   white-space: nowrap;
 }
 .chip[aria-pressed="true"] {
@@ -334,16 +362,16 @@ input:focus {
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.2rem;
+  gap: 0.9rem;
 }
 .card {
   display: flex;
-  gap: 1rem;
-  padding: 0.8rem;
+  gap: 0.8rem;
+  padding: 0.6rem;
   border-radius: var(--radius);
   background: var(--surface);
   text-align: left;
-  min-height: 12.5rem;
+  min-height: 10rem;
 }
 .card:focus {
   transform: scale(1.03);
@@ -351,7 +379,7 @@ input:focus {
   z-index: 1;
 }
 .card-poster {
-  flex: 0 0 7.5rem;
+  flex: 0 0 6.2rem;
   aspect-ratio: 2 / 3;
   border-radius: 0.6rem;
   overflow: hidden;
@@ -375,11 +403,11 @@ input:focus {
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.3rem;
   min-width: 0;
 }
 .card-title {
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -390,12 +418,12 @@ input:focus {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
 }
 .card-overview {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   color: #cfd5df;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -434,19 +462,20 @@ input:focus {
   gap: 0.5rem;
 }
 .providers img {
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 0.45rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.4rem;
 }
 .providers--named li {
-  padding: 0.3rem 0.8rem 0.3rem 0.3rem;
-  border-radius: 0.6rem;
+  padding: 0.22rem 0.7rem 0.22rem 0.22rem;
+  border-radius: 0.55rem;
   background: rgba(255, 255, 255, 0.1);
+  font-size: 0.88rem;
   font-weight: 600;
 }
 .providers--named img {
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2rem;
+  height: 2rem;
 }
 .provider-fallback,
 .providers-more {
@@ -464,14 +493,15 @@ input:focus {
 
 .platforms {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 0.7rem;
 }
 .platform {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-  padding: 0.6rem;
+  gap: 0.6rem;
+  padding: 0.45rem;
+  font-size: 0.9rem;
   border-radius: var(--radius);
   background: var(--surface);
   border: 2px solid transparent;
@@ -479,8 +509,8 @@ input:focus {
   font-weight: 600;
 }
 .platform img {
-  width: 2.8rem;
-  height: 2.8rem;
+  width: 2.2rem;
+  height: 2.2rem;
   border-radius: 0.5rem;
 }
 .platform[aria-pressed="true"] {
@@ -499,7 +529,7 @@ input:focus {
 
 /* ---------- Ficha grande (detalle y sorpréndeme) ---------- */
 .feature {
-  border-radius: 1.2rem;
+  border-radius: 1rem;
   overflow: hidden;
   background-color: var(--surface);
   background-size: cover;
@@ -507,14 +537,15 @@ input:focus {
 }
 .feature-shade {
   display: flex;
-  gap: 1.5rem;
-  padding: 1.4rem;
+  gap: 1.3rem;
+  padding: 1.1rem;
   background: linear-gradient(90deg, rgba(11, 13, 18, 0.97) 35%, rgba(11, 13, 18, 0.75) 70%, rgba(11, 13, 18, 0.55));
 }
 .feature-poster {
-  flex: 0 0 12rem;
+  flex: 0 0 10.5rem;
+  align-self: flex-start;
   aspect-ratio: 2 / 3;
-  border-radius: 0.9rem;
+  border-radius: 0.8rem;
   overflow: hidden;
   background: var(--surface-2);
   box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.5);
@@ -522,7 +553,7 @@ input:focus {
 .feature-info {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 0.6rem;
   min-width: 0;
 }
 .feature-kind {
@@ -530,26 +561,26 @@ input:focus {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 .feature-title {
-  font-size: 2.3rem;
+  font-size: 1.85rem;
   line-height: 1.1;
 }
 .feature-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 1.2rem;
+  gap: 0.3rem 1rem;
   color: var(--muted);
-  font-size: 1.05rem;
+  font-size: 0.92rem;
 }
 .feature-tagline {
   font-style: italic;
   color: #cfd5df;
 }
 .feature-overview {
-  font-size: 1.05rem;
-  max-width: 48rem;
+  font-size: 0.95rem;
+  max-width: 46rem;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
@@ -613,12 +644,12 @@ input:focus {
   text-align: center;
 }
 .quiz-title {
-  font-size: 2.2rem;
+  font-size: 1.8rem;
   line-height: 1.15;
 }
 .quiz-hint {
   color: var(--muted);
-  font-size: 1.15rem;
+  font-size: 1rem;
   max-width: 40rem;
 }
 .quiz-progress {
@@ -654,20 +685,20 @@ input:focus {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  min-width: 13rem;
-  padding: 1.2rem 1.4rem;
-  border-radius: 1.1rem;
+  gap: 0.4rem;
+  min-width: 11rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: 1rem;
   background: var(--surface);
   border: 2px solid transparent;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   font-weight: 700;
 }
 .quiz-options--multi .quiz-option {
   flex-direction: row;
   min-width: 0;
-  padding: 0.7rem 1.1rem;
-  font-size: 1.05rem;
+  padding: 0.55rem 0.95rem;
+  font-size: 0.92rem;
 }
 .quiz-option img {
   width: 2.4rem;
@@ -675,7 +706,7 @@ input:focus {
   border-radius: 0.5rem;
 }
 .quiz-icon {
-  font-size: 2.2rem;
+  font-size: 1.9rem;
   line-height: 1;
 }
 .quiz-options--multi .quiz-icon {
@@ -709,17 +740,17 @@ input:focus {
 
 /* ---------- Valoraciones (feedback) ---------- */
 .feature-actions {
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 .feedback {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.35rem;
   flex-basis: 100%;
 }
 .btn--feedback {
-  padding: 0.45rem 0.8rem;
-  font-size: 0.95rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.84rem;
   background: rgba(255, 255, 255, 0.08);
   border: 2px solid transparent;
 }
@@ -735,7 +766,7 @@ input:focus {
 .card-reason,
 .poster-card-reason {
   color: var(--accent);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
 }
 .card-reason {
@@ -752,11 +783,11 @@ input:focus {
   gap: 0.4rem;
 }
 .shelf-title {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
 }
 .shelf-row {
   display: flex;
-  gap: 1rem;
+  gap: 0.8rem;
   overflow-x: auto;
   scrollbar-width: none;
   /* Hueco para el anillo de foco y el zoom de la tarjeta enfocada. */
@@ -768,17 +799,17 @@ input:focus {
   display: none;
 }
 .poster-card {
-  flex: 0 0 8.5rem;
-  width: 8.5rem;
+  flex: 0 0 7.6rem;
+  width: 7.6rem;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.45rem;
+  gap: 0.2rem;
+  padding: 0.38rem;
   border-radius: var(--radius);
   background: var(--surface);
   text-align: left;
-  scroll-margin: 6rem 1rem 1rem;
+  scroll-margin: 5rem 1rem 1rem;
 }
 .poster-card:focus {
   transform: scale(1.06);
@@ -807,7 +838,7 @@ input:focus {
 }
 .poster-card-title {
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -817,7 +848,7 @@ input:focus {
   display: flex;
   gap: 0.5rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 .poster-card-reason {
   display: -webkit-box;
@@ -916,39 +947,85 @@ input:focus {
   color: var(--accent);
 }
 
-/* En la tele (960 px de ancho en Fire TV, 1280 en otras) el nombre del perfil no cabe junto a las 6 pestañas. */
-@media (max-width: 1600px) {
-  /* 7 pestañas (con «Comunidad») tienen que caber enteras de 960 a 1600 px. */
-  .tab {
-    font-size: 0.92rem;
-    padding: 0.5rem 0.5rem;
-  }
-  .logo:not(.logo--big) {
-    font-size: 1.25rem;
-  }
+/* En la tele de 960 px (Fire TV) el nombre del perfil sobra: basta con el avatar. */
+@media (max-width: 1100px) {
   .who-name {
     display: none;
   }
   .who {
-    padding: 0.35rem;
+    padding: 0.25rem;
   }
 }
 
 /* ---------- Pantallas pequeñas (móvil) ---------- */
 @media (max-width: 760px) {
   html {
-    font-size: 15px;
+    font-size: 14px;
+  }
+  :root {
+    --safe-x: 1rem;
+    --safe-y: 0.6rem;
+  }
+  /* Barra de pestañas fija abajo, con icono y nombre corto: las 7 caben enteras en 320-375 px. */
+  .app {
+    padding-bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px));
   }
   .topbar {
-    flex-wrap: wrap;
-    gap: 0.6rem;
+    justify-content: space-between;
   }
   .tabs {
-    order: 3;
-    flex-basis: 100%;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0;
+    padding: 0.3rem 0.2rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+    background: rgba(22, 26, 35, 0.97);
+    border-top: 1px solid var(--surface-2);
+    overflow: visible;
   }
-  .who {
-    margin-left: auto;
+  .tab {
+    position: relative;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.3rem 0;
+    border-radius: 0.6rem;
+    font-size: 0.66rem;
+    min-width: 0;
+  }
+  .tab:focus {
+    transform: none;
+  }
+  .tab-icon {
+    display: block;
+    font-size: 1.15rem;
+    line-height: 1.2;
+    filter: grayscale(1) opacity(0.7);
+  }
+  .tab[aria-current="page"] .tab-icon {
+    filter: none;
+  }
+  .tab[aria-current="page"] {
+    background: transparent;
+    color: var(--accent);
+  }
+  .tab-label {
+    display: none;
+  }
+  .tab-short {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-count {
+    position: absolute;
+    top: 0.1rem;
+    left: 55%;
+    font-size: 0.6rem;
+    background: var(--accent);
+    color: var(--accent-ink);
   }
   .who-name {
     display: none;
@@ -966,35 +1043,42 @@ input:focus {
   }
   .feature-shade {
     flex-direction: column;
-    padding: 1rem;
+    padding: 0.9rem;
   }
-  .feature-poster {
+  .feature-poster,
+  .feature--fit .feature-poster {
     flex-basis: auto;
-    width: 9rem;
+    width: 8rem;
+  }
+  .feature-title {
+    font-size: 1.5rem;
   }
   .search {
     flex-wrap: wrap;
   }
   .avatar:not(.avatar--small) {
-    width: 5rem;
-    height: 5rem;
-    font-size: 1.6rem;
+    width: 4.5rem;
+    height: 4.5rem;
+    font-size: 1.5rem;
   }
   .profile {
-    min-width: 9rem;
+    min-width: 8.5rem;
   }
   .quiz-title {
-    font-size: 1.6rem;
+    font-size: 1.5rem;
   }
   .quiz-option {
-    min-width: 9rem;
+    min-width: 8.5rem;
   }
   .seeds {
     grid-template-columns: repeat(3, 1fr);
   }
   .poster-card {
-    flex-basis: 7.5rem;
-    width: 7.5rem;
+    flex-basis: 7rem;
+    width: 7rem;
+  }
+  .toast {
+    bottom: calc(5.2rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -1065,8 +1149,8 @@ input:focus {
 }
 .name-input {
   width: 100%;
-  padding: 0.9rem 1.2rem;
-  font-size: 1.5rem;
+  padding: 0.7rem 1rem;
+  font-size: 1.25rem;
   border-radius: var(--radius);
   border: 0.12rem solid var(--surface-2);
   background: var(--surface);
@@ -1110,11 +1194,11 @@ input:focus {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  padding: 1.5rem 2rem;
-  border-radius: 1.4rem;
+  gap: 0.8rem;
+  padding: 1.2rem 1.6rem;
+  border-radius: 1.2rem;
   background: var(--surface);
-  max-width: 34rem;
+  max-width: 30rem;
   text-align: center;
 }
 .pin-dots {
@@ -1133,14 +1217,14 @@ input:focus {
 }
 .pin-keys {
   display: grid;
-  grid-template-columns: repeat(3, 4.2rem);
-  gap: 0.6rem;
+  grid-template-columns: repeat(3, 3.6rem);
+  gap: 0.5rem;
 }
 .pin-key {
-  height: 3.4rem;
-  border-radius: 0.8rem;
+  height: 2.8rem;
+  border-radius: 0.7rem;
   background: var(--surface-2);
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
 }
 .pin-key--muted {
@@ -1169,9 +1253,9 @@ input:focus {
 .reviews {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  padding: 1.2rem 1.4rem;
-  border-radius: 1.2rem;
+  gap: 0.7rem;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
   background: var(--surface);
 }
 .reviews-head {
@@ -1234,7 +1318,7 @@ input:focus {
   box-shadow: var(--focus);
 }
 .review-text {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
 }
 .review-src {
   font-size: 0.78rem;
@@ -1243,4 +1327,169 @@ input:focus {
 .reviews-loading,
 .reviews-foot {
   font-size: 0.8rem;
+}
+
+/* ---------- Sorpréndeme: todo en una pantalla de tele ---------- */
+.feature--fit .feature-shade {
+  align-items: flex-start;
+}
+/* El póster se limita por el alto de la pantalla para que título, datos, plataformas y botones quepan sin scroll. */
+.feature--fit .feature-poster {
+  flex-basis: min(16rem, calc((100vh - 9rem) * 0.6));
+}
+.feature--fit .feature-info {
+  gap: 0.5rem;
+}
+.feature--fit .feature-kind {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.feature--fit .feature-title {
+  font-size: 1.7rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.feature--fit .feature-overview {
+  -webkit-line-clamp: 3;
+  font-size: 0.9rem;
+}
+.surprise-bar {
+  padding-top: 0.5rem;
+}
+
+/* ---------- Panel por encima (filtros de Sorpréndeme) ---------- */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--safe-y) var(--safe-x);
+  background: rgba(5, 6, 9, 0.82);
+  backdrop-filter: blur(4px);
+}
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(100%, 60rem);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--surface-2);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* ---------- Aviso discreto (Atrás para salir) ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-y) + 1rem);
+  z-index: 90;
+  transform: translate(-50%, 0.6rem);
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  background: rgba(32, 38, 52, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.45);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+.toast--show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- «Me encanta»: explosión de corazones ---------- */
+.heart-burst {
+  position: fixed;
+  z-index: 100;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.heart {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 1.45rem;
+  line-height: 1;
+  color: #ff4d6d;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.3);
+  animation: heart-fly 850ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+@keyframes heart-fly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx, 0)), calc(-50% + var(--dy, -2rem))) scale(var(--s, 1)) rotate(var(--rot, 0deg));
+  }
+}
+.heart--still {
+  animation: heart-pulse 600ms ease-out forwards;
+}
+@keyframes heart-pulse {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.3);
+  }
+}
+
+/* Móvil: el panel de filtros sale desde abajo, como una hoja. */
+@media (max-width: 760px) {
+  .sheet {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .sheet-body {
+    border-radius: 1rem 1rem 0 0;
+    max-height: 85vh;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  input,
+  a,
+  .toast {
+    transition: none;
+  }
 }

@@ -3,18 +3,22 @@ import { useEffect, useState } from "react";
 import { formatRuntime, getJSON } from "@/lib/client";
 import type { Signal } from "@/lib/reco/types";
 import type { MediaType, SavedTitle, Title, TitleDetail } from "@/lib/types";
+import { burstHearts } from "./HeartBurst";
 import { focusFirst } from "./spatialNav";
 import { useProfile } from "./profileContext";
 import { ProviderList } from "./Providers";
 import { ReviewsPanel } from "./ReviewsPanel";
 import { Rating } from "./TitleCard";
 
-/** Ficha grande de un título: fondo, póster, datos, plataformas y botones. */
-export function TitleFeature({ title, children }: { title: TitleDetail | Title | SavedTitle; children?: React.ReactNode }) {
+/**
+ * Ficha grande de un título: fondo, póster, datos, plataformas y botones.
+ * `fit`: versión que cabe entera en una pantalla de tele sin hacer scroll (Sorpréndeme).
+ */
+export function TitleFeature({ title, children, fit = false }: { title: TitleDetail | Title | SavedTitle; children?: React.ReactNode; fit?: boolean }) {
   const t = title as Partial<TitleDetail> & SavedTitle;
   const runtime = formatRuntime(t.runtime ?? null);
   return (
-    <article className="feature" style={t.backdrop ? { backgroundImage: `url(${t.backdrop})` } : undefined}>
+    <article className={`feature${fit ? " feature--fit" : ""}`} style={t.backdrop ? { backgroundImage: `url(${t.backdrop})` } : undefined}>
       <div className="feature-shade">
         <div className="feature-poster">{t.poster ? <img src={t.poster} alt="" /> : <span className="poster-fallback">{t.title}</span>}</div>
         <div className="feature-info">
@@ -30,10 +34,10 @@ export function TitleFeature({ title, children }: { title: TitleDetail | Title |
             {t.seasons ? <span>{t.seasons} temporada{t.seasons > 1 ? "s" : ""}</span> : null}
             {t.genres?.length ? <span>{t.genres.slice(0, 3).join(" · ")}</span> : null}
           </p>
-          {t.tagline && <p className="feature-tagline">{t.tagline}</p>}
+          {t.tagline && !fit && <p className="feature-tagline">{t.tagline}</p>}
           <p className="feature-overview">{t.overview || "Sin sinopsis."}</p>
           <div className="feature-providers">
-            <ProviderList providers={t.providers} rentOrBuy={t.rentOrBuy} withNames max={8} />
+            <ProviderList providers={t.providers} rentOrBuy={t.rentOrBuy} withNames max={fit ? 4 : 8} />
           </div>
           <div className="actions feature-actions">{children}</div>
         </div>
@@ -60,8 +64,9 @@ export function FeedbackButtons({ title, onRated }: { title: Title | SavedTitle;
           key={o.s}
           className="btn btn--feedback"
           aria-pressed={current === o.s}
-          onClick={() => {
+          onClick={(e) => {
             const next = current === o.s ? null : o.s;
+            if (next === "love") burstHearts(e.currentTarget);
             profile.rate(title, o.s);
             onRated?.(next);
           }}

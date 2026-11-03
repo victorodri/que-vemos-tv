@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { focusFirst } from "./spatialNav";
+import { focusFirst, useBackHandler } from "./spatialNav";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✕"];
 
@@ -36,6 +36,8 @@ export function PinPad({
   useEffect(() => {
     requestAnimationFrame(focusFirst);
   }, []);
+  // Atrás del mando = cancelar.
+  useBackHandler(true, onCancel);
 
   const submit = async (value: string) => {
     if (confirm && firstRef.current === null) {

@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { setSoundEnabled, soundEnabled } from "@/lib/sound";
 import type { Meta } from "@/lib/types";
 import { useProfile } from "./profileContext";
 
@@ -7,6 +8,9 @@ export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: (
   const profile = useProfile();
   const { platforms, seen } = profile.data;
   const [confirmClear, setConfirmClear] = useState(false);
+  // Preferencia de esta tele (localStorage), no del perfil: se lee tras montar para no romper la hidratación.
+  const [sound, setSound] = useState(true);
+  useEffect(() => setSound(soundEnabled()), []);
 
   const toggle = (id: number) => profile.setPlatforms(platforms.includes(id) ? platforms.filter((p) => p !== id) : [...platforms, id]);
 
@@ -28,6 +32,21 @@ export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: (
       <div>
         <button className="btn" onClick={onRedo}>
           ✎ Repetir cuestionario
+        </button>
+      </div>
+
+      <h2>Sonido</h2>
+      <p className="hint">Un «tic» suave al moverte con el mando y otro al pulsar OK. Se guarda en esta tele.</p>
+      <div>
+        <button
+          className="btn"
+          aria-pressed={sound}
+          onClick={() => {
+            setSoundEnabled(!sound);
+            setSound(!sound);
+          }}
+        >
+          {sound ? "🔊 Sonido activado" : "🔇 Sonido desactivado"}
         </button>
       </div>
 

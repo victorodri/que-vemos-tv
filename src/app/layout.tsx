@@ -11,6 +11,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   themeColor: "#0b0d12",
   colorScheme: "dark",
+  // La barra de pestañas del móvil respeta la zona segura inferior (env(safe-area-inset-bottom)).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

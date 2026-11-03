@@ -4,7 +4,7 @@ import { getJSON } from "@/lib/client";
 import { DEFAULT_PREFS, GENRE_GROUPS, PERSONA_QUESTIONS, type GenreGroupId, type Prefs } from "@/lib/prefs";
 import type { FeedbackEntry, Signal } from "@/lib/reco/types";
 import { titleKey, type Meta, type Title } from "@/lib/types";
-import { focusFirst } from "./spatialNav";
+import { focusFirst, useBackHandler } from "./spatialNav";
 
 /** Valoraciones hechas en el paso de pósters: clave "movie:123" → señal + título. */
 export type QuizRatings = Record<string, { signal: Signal; item: Title }>;
@@ -220,6 +220,8 @@ export function Questionnaire({
     onDone(prefs, platforms, out);
   };
   const next = (a: Answers) => (index >= steps.length - 1 ? finish(a) : setIndex(index + 1));
+  // Atrás del mando: paso anterior; en la bienvenida, cancelar (solo al repetir el cuestionario).
+  useBackHandler(index > -1 || Boolean(onCancel), () => (index > -1 ? setIndex(index - 1) : onCancel?.()));
 
   if (index === -1) {
     return (

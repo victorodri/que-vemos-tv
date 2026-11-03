@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { getJSON, hashOf } from "@/lib/client";
 import type { RecoItem, Shelf } from "@/lib/reco/types";
 import { titleKey, type Title } from "@/lib/types";
+import { NewReleasesSpotlight } from "./NewReleasesSpotlight";
 import { useProfile } from "./profileContext";
+import { SocialCountsContext, SocialPulse, socialLabel, useActivity, useSocialCount } from "./SocialPulse";
 import { Rating, SIGNAL_BADGE } from "./TitleCard";
 
 type Kind = "movie" | "tv" | "all";
@@ -12,13 +14,25 @@ type Kind = "movie" | "tv" | "all";
 export function PosterCard({ item, onOpen, autofocus }: { item: RecoItem; onOpen: () => void; autofocus?: boolean }) {
   const profile = useProfile();
   const rated = profile.feedbackOf(item);
+  const social = useSocialCount(item);
+  const socialText = social ? socialLabel(social) : null;
   return (
-    <button className="poster-card" onClick={onOpen} aria-label={`${item.title}. ${item.reason}`} data-autofocus={autofocus || undefined}>
+    <button
+      className="poster-card"
+      onClick={onOpen}
+      aria-label={[item.title, item.reason, socialText].filter(Boolean).join(". ")}
+      data-autofocus={autofocus || undefined}
+    >
       <div className="poster-card-img">
         {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span className="poster-fallback">{item.title}</span>}
         <span className="poster-card-badges">
           {profile.inList(item) && <span className="badge">En mi lista</span>}
           {rated && <span className="badge badge--rated">{SIGNAL_BADGE[rated]}</span>}
+          {social && (
+            <span className="badge badge--social" title={socialText ?? undefined}>
+              👥 {social.n}
+            </span>
+          )}
         </span>
       </div>
       <span className="poster-card-title">{item.title}</span>
@@ -41,6 +55,8 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const pareja = profile.plural;
+  // Actividad de otros perfiles: franja «En Qué Vemos» y contadores «👥» de las tarjetas.
+  const { data: activity } = useActivity(profile.id, 24, String(reload));
 
   // Lo que el servidor usa para recomendar. Al cambiar (valorar, añadir a la lista…) se recalcula con retardo,
   // para no pedir estanterías nuevas a cada pulsación.
@@ -85,52 +101,49 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
     : [];
 
   return (
-    <div className="view">
-      <div className="foryou-header">
-        <div>
-          <h2>{pareja ? "Para vosotros" : "Para ti"}</h2>
-          <p className="hint">
-            Cada ❤️, 👍, 👎 o 🚫 que {pareja ? "pongáis" : "pongas"} afina estas recomendaciones.
-          </p>
-        </div>
-        <div className="chips">
-          {kinds.map((k) => (
-            <button key={k.id} className="chip" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} data-autofocus={kind === k.id || undefined}>
-              {k.label}
-            </button>
-          ))}
-          <button className="chip" onClick={() => setReload((n) => n + 1)}>
-            ↻ Actualizar
-          </button>
-          <button className="chip" onClick={onRedo}>
-            ✎ Cambiar gustos
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <p className="error">
-          No se han podido cargar las recomendaciones: {error}
-        </p>
-      )}
-      {shelves === null && loading && <p className="loading">Preparando recomendaciones…</p>}
-      {shelves !== null && !loading && !error && visible.length === 0 && (
-        <p className="empty">
-          Todavía no hay nada que encaje. Prueba a valorar algunos títulos o a cambiar tus gustos.
-        </p>
-      )}
-
-      {visible.map((shelf) => (
-        <section key={shelf.id + shelf.title} className="shelf" aria-label={shelf.title}>
-          <h3 className="shelf-title">{shelf.title}</h3>
-          <div className="shelf-row">
-            {shelf.items.map((item) => (
-              <PosterCard key={titleKey(item)} item={item} onOpen={() => onOpen(item)} />
-            ))}
+    <SocialCountsContext.Provider value={activity?.counts ?? {}}>
+      <div className="view">
+        <div className="foryou-header">
+          <div>
+            <h2>{pareja ? "Para vosotros" : "Para ti"}</h2>
+            <p className="hint">Cada ❤️, 👍, 👎 o 🚫 que {pareja ? "pongáis" : "pongas"} afina estas recomendaciones.</p>
           </div>
-        </section>
-      ))}
-      {shelves !== null && loading && <p className="hint shelf-updating">Actualizando…</p>}
-    </div>
+          <div className="chips">
+            {kinds.map((k) => (
+              <button key={k.id} className="chip" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} data-autofocus={kind === k.id || undefined}>
+                {k.label}
+              </button>
+            ))}
+            <button className="chip" onClick={() => setReload((n) => n + 1)}>
+              ↻ Actualizar
+            </button>
+            <button className="chip" onClick={onRedo}>
+              ✎ Cambiar gustos
+            </button>
+          </div>
+        </div>
+
+        <SocialPulse data={activity} onOpen={onOpen} plural={pareja} />
+        <NewReleasesSpotlight onOpen={onOpen} />
+
+        {error && <p className="error">No se han podido cargar las recomendaciones: {error}</p>}
+        {shelves === null && loading && <p className="loading">Preparando recomendaciones…</p>}
+        {shelves !== null && !loading && !error && visible.length === 0 && (
+          <p className="empty">Todavía no hay nada que encaje. Prueba a valorar algunos títulos o a cambiar tus gustos.</p>
+        )}
+
+        {visible.map((shelf) => (
+          <section key={shelf.id + shelf.title} className="shelf" aria-label={shelf.title}>
+            <h3 className="shelf-title">{shelf.title}</h3>
+            <div className="shelf-row">
+              {shelf.items.map((item) => (
+                <PosterCard key={titleKey(item)} item={item} onOpen={() => onOpen(item)} />
+              ))}
+            </div>
+          </section>
+        ))}
+        {shelves !== null && loading && <p className="hint shelf-updating">Actualizando…</p>}
+      </div>
+    </SocialCountsContext.Provider>
   );
 }

@@ -7,6 +7,8 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.KeyEvent;
+import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -16,12 +18,28 @@ import android.webkit.WebViewClient;
  * Toda la app vive en la web, así que cada despliegue en Vercel llega a la tele sin reinstalar el APK.
  *
  * El mando: las flechas llegan a la web como ArrowUp/Down/Left/Right (la web gestiona el foco),
- * OK se traduce a Enter y Atrás retrocede en el historial de la web o cierra la app.
+ * OK se traduce a Enter y Atrás se delega en la web (window.__queVemosBack): la web decide si cierra una ficha,
+ * vuelve a «Para ti» o, con una segunda pulsación, cierra la app llamando a QueVemosAndroid.exit().
+ * Si la web no responde (página sin cargar o versión antigua), se retrocede en el historial o se cierra la app.
  */
 public class MainActivity extends Activity {
 
     private WebView web;
     private boolean offline = false;
+
+    /** Puente que ve la web como window.QueVemosAndroid. Solo expone cerrar la app. */
+    public final class Bridge {
+        @JavascriptInterface
+        public void exit() {
+            // Las llamadas de JavaScript llegan en un hilo del WebView: finish() tiene que ir al hilo principal.
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    finish();
+                }
+            });
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -40,6 +58,9 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setUserAgentString(s.getUserAgentString() + " QueVemosTV/" + BuildConfig.VERSION_NAME);
+        // Los sonidos de la interfaz (Web Audio) no deben esperar a un gesto «de vídeo».
+        s.setMediaPlaybackRequiresUserGesture(false);
+        web.addJavascriptInterface(new Bridge(), "QueVemosAndroid");
 
         final String appHost = Uri.parse(BuildConfig.APP_URL).getHost();
 
@@ -92,6 +113,12 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // Atrás: se consume aquí (pulsar y soltar) y se delega en la web al soltar, una sola vez por pulsación.
+        // Así la web no recibe además una tecla Escape/GoBack ni el WebView retrocede por su cuenta.
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) handleBack();
+            return true;
+        }
         // El botón central del mando como Enter, para que «pulse» el botón enfocado en la web.
         if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER) {
             return super.dispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(), event.getAction(),
@@ -100,14 +127,35 @@ public class MainActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
 
-    @Override
-    @SuppressWarnings("deprecation")
-    public void onBackPressed() {
+    /** Pregunta a la web si gestiona Atrás; si no (sin cargar, sin conexión, versión antigua), comportamiento clásico. */
+    private void handleBack() {
+        if (offline) {
+            fallbackBack();
+            return;
+        }
+        web.evaluateJavascript(
+                "(function(){try{return !!(window.__queVemosBack&&window.__queVemosBack());}catch(e){return false;}})()",
+                new ValueCallback<String>() {
+                    @Override
+                    public void onReceiveValue(String value) {
+                        if (!"true".equals(value)) fallbackBack();
+                    }
+                });
+    }
+
+    private void fallbackBack() {
         if (!offline && web.canGoBack()) {
             web.goBack();
         } else {
-            super.onBackPressed();
+            finish();
         }
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        // Normalmente no llega aquí (dispatchKeyEvent consume Atrás), pero por si algún dispositivo lo envía distinto.
+        handleBack();
     }
 
     @Override

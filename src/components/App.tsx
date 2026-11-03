@@ -17,28 +17,53 @@ import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
 import { SeenView } from "./SeenView";
 import { SettingsView } from "./SettingsView";
-import { focusEl, focusFirst, focusables, useSpatialNav } from "./spatialNav";
+import { focusEl, focusFirst, focusables, runBack, useSpatialNav } from "./spatialNav";
 import { SurpriseView } from "./SurpriseView";
 import { DetailModal } from "./TitleFeature";
 
 type Tab = "foryou" | "search" | "surprise" | "community" | "list" | "seen" | "settings";
 type ProfileId = string;
 type Detail = { type: MediaType; id: number; preview?: Title | SavedTitle };
-// El estado de navegación vive en el historial del navegador, así el botón «Atrás» del mando funciona.
-type Nav = { profile: ProfileId | null; tab: Tab; detail: Detail | null };
+// El estado de navegación vive en el historial del navegador, así el botón «Atrás» del navegador funciona.
+// `sub`: la pestaña se abrió encima de «Para ti» (hay una entrada de «Para ti» justo debajo en el historial).
+type Nav = { profile: ProfileId | null; tab: Tab; detail: Detail | null; sub?: boolean };
+
+/** Puente que expone la app de Android TV (MainActivity.java) para cerrar la app. */
+type AndroidBridge = { exit?: () => void };
+declare global {
+  interface Window {
+    QueVemosAndroid?: AndroidBridge;
+    /** Lo llama la app de Android al pulsar Atrás en el mando. Devuelve true si la web lo ha gestionado. */
+    __queVemosBack?: () => boolean;
+  }
+}
+/** Tiempo para la segunda pulsación de Atrás que cierra la app. */
+const EXIT_WINDOW_MS = 2200;
 
 const HOME: Nav = { profile: null, tab: "foryou", detail: null };
 const LAST_PROFILE = "quevemos:lastProfile";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "foryou", label: "Para ti" },
-  { id: "search", label: "Buscar" },
-  { id: "surprise", label: "Sorpréndeme" },
-  { id: "community", label: "Comunidad" },
-  { id: "list", label: "Mi lista" },
-  { id: "seen", label: "Vistos" },
-  { id: "settings", label: "Ajustes" },
+// `short` e `icon` se usan en la barra inferior del móvil, donde no caben los nombres completos.
+const TABS: { id: Tab; label: string; short: string; icon: string }[] = [
+  { id: "foryou", label: "Para ti", short: "Para ti", icon: "🏠" },
+  { id: "search", label: "Buscar", short: "Buscar", icon: "🔍" },
+  { id: "surprise", label: "Sorpréndeme", short: "Sorpresa", icon: "🎲" },
+  { id: "community", label: "Comunidad", short: "Gente", icon: "👥" },
+  { id: "list", label: "Mi lista", short: "Lista", icon: "🔖" },
+  { id: "seen", label: "Vistos", short: "Vistos", icon: "👁" },
+  { id: "settings", label: "Ajustes", short: "Ajustes", icon: "⚙️" },
 ];
+
+/**
+ * Next.js recarga la página entera en un popstate si la entrada del historial no lleva su marca (`__NA` y su árbol).
+ * Nuestras entradas copian esas claves de la actual para que Atrás del navegador no recargue la app.
+ */
+function historyState(n: Nav): Nav {
+  const cur = history.state as Record<string, unknown> | null;
+  const keep: Record<string, unknown> = {};
+  if (cur) for (const k of ["__NA", "__PRIVATE_NEXTJS_INTERNALS_TREE"]) if (k in cur) keep[k] = cur[k];
+  return { ...keep, ...n };
+}
 
 function readLastProfile() {
   try {
@@ -68,30 +93,104 @@ export default function App() {
   // Tarjeta que abrió la ficha, y su contenedor y posición por si desaparece mientras tanto (marcada como vista, descartada…).
   const openerRef = useRef<{ el: HTMLElement; group: Element | null; index: number } | null>(null);
 
-  // ---------- Historial ----------
+  // ---------- Historial y botón Atrás ----------
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  const [exitHint, setExitHint] = useState(false);
+  const exitArmedAt = useRef(0);
+
+  /** Primera pulsación: aviso. Segunda (antes de ~2 s): cierra la app en la tele; en el navegador no hace nada. */
+  const armExit = (): boolean => {
+    const now = Date.now();
+    if (now - exitArmedAt.current < EXIT_WINDOW_MS) {
+      exitArmedAt.current = 0;
+      setExitHint(false);
+      return true;
+    }
+    exitArmedAt.current = now;
+    setExitHint(true);
+    return false;
+  };
+  useEffect(() => {
+    if (!exitHint) return;
+    const t = setTimeout(() => setExitHint(false), EXIT_WINDOW_MS);
+    return () => clearTimeout(t);
+  }, [exitHint]);
+
   useEffect(() => {
     setLastUsed(readLastProfile());
     const s = history.state as Nav | null;
     if (s && "tab" in s && (s.profile === null || typeof s.profile === "string")) setNav(s);
-    else history.replaceState(HOME, "");
-    const onPop = (e: PopStateEvent) => setNav((e.state as Nav | null) ?? HOME);
+    else history.replaceState(historyState(HOME), "");
+    const onPop = (e: PopStateEvent) => {
+      const next = (e.state as Nav | null) ?? HOME;
+      const prev = navRef.current;
+      // Atrás del navegador (o de un APK antiguo) desde «Para ti» no saca del perfil a la primera: se avisa y se
+      // restaura la entrada. El perfil solo se cambia con el botón del avatar.
+      if (prev.profile && !next.profile && !prev.detail && !armExit()) {
+        history.pushState(historyState(prev), "");
+        return;
+      }
+      setNav(next);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const push = (next: Nav) => {
-    history.pushState(next, "");
+    history.pushState(historyState(next), "");
     setNav(next);
   };
   const replace = (next: Nav) => {
-    history.replaceState(next, "");
+    history.replaceState(historyState(next), "");
     setNav(next);
   };
 
-  const back = useCallback(() => {
-    if (nav.profile) history.back();
-  }, [nav.profile]);
-  useSpatialNav(back);
+  /** Cambia de pestaña. Las pestañas se abren «encima» de Para ti, así Atrás del navegador también vuelve a ella. */
+  const goTab = (tab: Tab) => {
+    const cur = navRef.current;
+    if (tab === cur.tab && !cur.detail) return;
+    if (tab === "foryou") {
+      if (cur.sub && !cur.detail) history.back();
+      else replace({ ...cur, tab, detail: null, sub: false });
+    } else if (cur.tab === "foryou" && !cur.detail) push({ ...cur, tab, detail: null, sub: true });
+    else replace({ ...cur, tab, detail: null, sub: cur.sub });
+  };
+
+  // Atrás (mando, Escape o Retroceso): ficha → se cierra; otra pestaña → «Para ti»; «Para ti» → doble pulsación para salir.
+  const back = () => {
+    const cur = navRef.current;
+    if (cur.detail) return history.back();
+    if (cur.profile && cur.tab !== "foryou") {
+      focusTabAfterNav.current = true;
+      goTab("foryou");
+      return;
+    }
+    if (armExit()) window.QueVemosAndroid?.exit?.();
+  };
+  // Tras volver a «Para ti» con Atrás (el cambio llega en un popstate asíncrono), el foco va a su pestaña.
+  const focusTabAfterNav = useRef(false);
+  useEffect(() => {
+    if (!focusTabAfterNav.current || nav.tab !== "foryou") return;
+    focusTabAfterNav.current = false;
+    requestAnimationFrame(focusFirst);
+  }, [nav.tab]);
+  const backRef = useRef(back);
+  backRef.current = back;
+  const stableBack = useCallback(() => backRef.current(), []);
+  useSpatialNav(stableBack);
+
+  // La app de Android delega aquí su botón Atrás (ver MainActivity.java).
+  useEffect(() => {
+    window.__queVemosBack = () => {
+      runBack(stableBack);
+      return true;
+    };
+    return () => {
+      delete window.__queVemosBack;
+    };
+  }, [stableBack]);
 
   // ---------- Datos ----------
   useEffect(() => {
@@ -388,6 +487,7 @@ export default function App() {
             onCancel={() => setPinFor(null)}
           />
         )}
+        <ExitHint show={exitHint} />
       </>
     );
   }
@@ -420,9 +520,15 @@ export default function App() {
         </h1>
         <nav className="tabs">
           {TABS.map((t) => (
-            <button key={t.id} className="tab" aria-current={nav.tab === t.id ? "page" : undefined} data-autofocus={nav.tab === t.id || undefined} onClick={() => replace({ ...nav, tab: t.id, detail: null })}>
-              {t.label}
-              {t.id === "list" && api ? ` (${api.data.watchlist.length})` : ""}
+            <button key={t.id} className="tab" aria-current={nav.tab === t.id ? "page" : undefined} data-autofocus={nav.tab === t.id || undefined} onClick={() => goTab(t.id)}>
+              <span className="tab-icon" aria-hidden="true">
+                {t.icon}
+              </span>
+              <span className="tab-label">{t.label}</span>
+              <span className="tab-short" aria-hidden="true">
+                {t.short}
+              </span>
+              {t.id === "list" && api && api.data.watchlist.length > 0 && <span className="tab-count">{api.data.watchlist.length}</span>}
             </button>
           ))}
         </nav>
@@ -446,9 +552,18 @@ export default function App() {
             {nav.tab === "seen" && <SeenView meta={meta} onOpen={openDetail} />}
             {nav.tab === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} onForget={forgetDevice} />}
           </main>
-          {nav.detail && <DetailModal key={`${nav.detail.type}:${nav.detail.id}`} target={nav.detail} onClose={back} />}
+          {nav.detail && <DetailModal key={`${nav.detail.type}:${nav.detail.id}`} target={nav.detail} onClose={stableBack} />}
         </ProfileContext.Provider>
       )}
+      <ExitHint show={exitHint} />
+    </div>
+  );
+}
+
+function ExitHint({ show }: { show: boolean }) {
+  return (
+    <div className={`toast${show ? " toast--show" : ""}`} role="status" aria-live="polite">
+      {show ? "Pulsa Atrás otra vez para salir" : ""}
     </div>
   );
 }

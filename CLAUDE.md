@@ -47,6 +47,15 @@ Lee primero `src/lib/reco/types.ts`: describe el diseño y el contrato de las AP
 - Críticas (`src/lib/reviews/`): TMDB (reseñas), Wikipedia (sección de recepción vía Wikidata), blogs y medios por RSS (`rss.ts`, el cron los indexa por título y la hemeroteca crece), Reddit y OMDb si hay claves. Análisis por reglas (`text.ts`: tono con léxico ES/EN y aspectos como «tensa», «giros», «lenta»). Resultado: nota de la crítica (entra en la calidad con `TUNING.wCritic`) y aspectos como rasgos `a:` del título (se añaden en `getManyFeatures`). Las preguntas de «forma de ser» del cuestionario (`PERSONA_QUESTIONS` en `prefs.ts`) son un prior sobre esos aspectos. La ficha muestra «Qué dice la crítica» (`/api/reviews/<tipo>/<id>`). Solo se guardan fragmentos cortos con enlace.
 - Evaluación offline: `scripts/eval-reco.ts` simula usuarios con gustos ocultos y mide precisión, NDCG, diversidad y novedad. Úsala antes y después de tocar pesos (`TUNING`, `SIGNAL_WEIGHT`, `FAMILY_WEIGHT`) y deja los números en el commit.
 
+## Social y novedades
+- `src/lib/activity.ts` + `/api/activity`: actividad real y positiva de otros perfiles (❤️, 👍, vistas, lista) para la franja «En Qué Vemos», los contadores 👥 de las tarjetas y el feed de Comunidad. Nunca se inventa actividad.
+- `src/lib/buzz.ts` + `/api/buzz`: «Estrenos que están dando que hablar» (cines ES, plataformas, series nuevas en tendencia), ordenados por tendencia, popularidad, votos recientes y crítica; personalizado con la afinidad del perfil. Caché 3 h.
+
+## Mando, sonido y Atrás
+- Atrás: ficha → se cierra; otra pestaña → «Para ti»; «Para ti» → aviso y, con una segunda pulsación, cierra la app (`window.QueVemosAndroid.exit()`, puente del APK ≥ 1.1). El APK delega Atrás en `window.__queVemosBack()`. Cambiar de perfil solo desde el avatar.
+- `src/lib/sound.ts`: sonidos sutiles con Web Audio al mover el foco y al pulsar OK (desactivables en Ajustes). `HeartBurst.ts`: explosión de corazones al marcar «Me encanta».
+- Las entradas de historial copian las claves internas de Next (`historyState()` en App.tsx); sin ellas, Atrás recarga la página.
+
 ## Vistos
 - `ProfileData.seenAt` guarda cuándo se marcó cada visto; el `PUT` del perfil lo valida y conserva fechas que el cliente no envíe. Los vistos antiguos sin fecha toman la del último evento `seen` o salen en «Sin fecha».
 - `GET /api/seen?profile=<id>` resuelve los títulos (más recientes primero) para `SeenView.tsx` (pestaña «Vistos», filtros por tipo y género).

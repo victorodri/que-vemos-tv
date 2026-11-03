@@ -5,7 +5,7 @@ import { getJSON, hashOf } from "@/lib/client";
 import { titleKey, type Filters, type Meta, type TitleDetail } from "@/lib/types";
 import { FiltersPanel } from "./FiltersPanel";
 import { useProfile } from "./profileContext";
-import { focusEl } from "./spatialNav";
+import { focusEl, focusFirst, useBackHandler } from "./spatialNav";
 import { FeedbackButtons, ProfileActions, TitleFeature } from "./TitleFeature";
 
 type SurpriseItem = TitleDetail & { reason?: string; arm?: string };
@@ -28,6 +28,17 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
   const againRef = useRef<HTMLButtonElement>(null);
   const filterKey = filtersToParams({ ...filters, query: "" }).toString();
   const tasteKey = hashOf([profile.data.platforms, profile.data.prefs]);
+  const filtersBtn = useRef<HTMLButtonElement>(null);
+
+  // Los filtros se abren en un panel por encima; Atrás o «Listo» lo cierran y devuelven el foco al botón.
+  const closeFilters = () => {
+    setShowFilters(false);
+    requestAnimationFrame(() => (filtersBtn.current ? focusEl(filtersBtn.current) : focusFirst()));
+  };
+  useBackHandler(showFilters, closeFilters);
+  useEffect(() => {
+    if (showFilters) requestAnimationFrame(focusFirst);
+  }, [showFilters]);
 
   // Con filtros o gustos nuevos se vacía la cola: lo precargado ya no vale.
   useEffect(() => {
@@ -84,25 +95,29 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
     if (queue.current.length < REFILL_BELOW) void refill();
   }
 
+  const filtersButton = (
+    <button className="btn" ref={filtersBtn} onClick={() => setShowFilters(true)} aria-expanded={showFilters}>
+      ⚙ Filtros
+    </button>
+  );
+
   return (
-    <div className="view">
-      <div className="surprise-bar">
-        {!item && (
+    <div className="view view--surprise">
+      {!item && (
+        <div className="surprise-bar">
           <button className="btn btn--primary btn--big" data-autofocus onClick={next} disabled={loading}>
             {loading ? "Buscando…" : "🎲 ¡Sorpréndeme!"}
           </button>
-        )}
-        <button className="btn" onClick={() => setShowFilters((v) => !v)} aria-expanded={showFilters}>
-          {showFilters ? "Ocultar filtros" : "Cambiar filtros"}
-        </button>
-      </div>
-      {showFilters && <FiltersPanel filters={filters} onChange={onFilters} meta={meta} />}
+          {filtersButton}
+        </div>
+      )}
       {message && <p className="empty">{message}</p>}
       {item && (
-        <TitleFeature title={item}>
+        <TitleFeature title={item} fit>
           <button
             className="btn btn--primary"
             ref={againRef}
+            data-autofocus
             onClick={() => {
               profile.track(item, "skip");
               next();
@@ -112,9 +127,23 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
             {loading ? "Buscando…" : "🎲 Otra"}
           </button>
           <ProfileActions title={item} onSeen={(nowSeen) => nowSeen && next()} />
+          {filtersButton}
           {/* «No me gusta» y «No me interesa» descartan la propuesta y pasan a otra. */}
           <FeedbackButtons title={item} onRated={(s) => (s === "dislike" || s === "not_interested") && next()} />
         </TitleFeature>
+      )}
+      {showFilters && (
+        <div className="sheet" data-nav-modal role="dialog" aria-modal="true" aria-label="Filtros de Sorpréndeme">
+          <div className="sheet-body">
+            <div className="sheet-head">
+              <h2>Filtros</h2>
+              <button className="btn btn--primary" data-autofocus onClick={closeFilters}>
+                ✓ Listo
+              </button>
+            </div>
+            <FiltersPanel filters={filters} onChange={onFilters} meta={meta} />
+          </div>
+        </div>
       )}
     </div>
   );

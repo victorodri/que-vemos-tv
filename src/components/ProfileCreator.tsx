@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { sendJSON } from "@/lib/client";
 import type { PublicProfile } from "@/lib/profiles";
 import { PinPad } from "./PinPad";
-import { focusFirst } from "./spatialNav";
+import { focusFirst, useBackHandler } from "./spatialNav";
 
 type Step = "kind" | "name" | "members" | "avatar" | "pin";
 
@@ -47,6 +47,9 @@ export function ProfileCreator({
     setError(null);
     setStep(order[i]);
   };
+
+  // Atrás del mando = paso anterior (en el paso del PIN lo gestiona el propio teclado de PIN).
+  useBackHandler(step !== "pin", () => go(-1));
 
   const progress = (
     <div className="quiz-progress">

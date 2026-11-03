@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { installSoundUnlock, playMove, playSelect } from "@/lib/sound";
 
 // Navegación con las flechas del mando (Fire TV / Android TV envían ArrowUp…, Enter y Back).
 // Busca el elemento enfocable más cercano en la dirección pulsada según su posición en pantalla.
@@ -75,16 +76,47 @@ export function focusFirst() {
   focusEl(root.querySelector<HTMLElement>("[data-autofocus]") ?? candidates()[0]);
 }
 
+// Pila de «Atrás» locales: un panel o diálogo abierto (filtros, PIN…) se cierra antes de que actúe la app.
+const backStack: { current: () => void }[] = [];
+
+/** Mientras `active` sea true, Atrás llama a `fn` en vez de a la acción general de la app. */
+export function useBackHandler(active: boolean, fn: () => void) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    if (!active) return;
+    const entry = { current: () => ref.current() };
+    backStack.push(entry);
+    return () => {
+      const i = backStack.indexOf(entry);
+      if (i >= 0) backStack.splice(i, 1);
+    };
+  }, [active]);
+}
+
+/** Ejecuta Atrás: primero el panel abierto más reciente; si no hay, la acción general. */
+export function runBack(general: () => void) {
+  const top = backStack[backStack.length - 1];
+  if (top) top.current();
+  else general();
+}
+
 export function useSpatialNav(onBack: () => void) {
   const backRef = useRef(onBack);
   backRef.current = onBack;
 
   useEffect(() => {
+    installSoundUnlock();
+    // Sonido de «OK»: cualquier botón o enlace activado (Enter del mando, clic o toque).
+    const onClick = (e: MouseEvent) => {
+      const t = e.target instanceof Element ? e.target.closest("button, a[href]") : null;
+      if (t && !(t as HTMLButtonElement).disabled) playSelect();
+    };
     const onKey = (e: KeyboardEvent) => {
       const active = document.activeElement;
       if (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack" || (e.key === "Backspace" && !isTextInput(active))) {
         e.preventDefault();
-        backRef.current();
+        runBack(backRef.current);
         return;
       }
       const dir = KEY_DIR[e.key];
@@ -104,11 +136,20 @@ export function useSpatialNav(onBack: () => void) {
       // no por el que quede justo debajo de la pestaña: así «abajo» siempre lleva al mismo sitio.
       if (dir === "down" && current.closest("[data-nav-header]")) {
         const entry = document.querySelector<HTMLElement>("main [data-autofocus]");
-        if (entry && items.includes(entry)) return focusEl(entry);
+        if (entry && items.includes(entry)) {
+          playMove();
+          return focusEl(entry);
+        }
       }
-      focusEl(nearest(current, dir, items));
+      const target = nearest(current, dir, items);
+      if (target) playMove();
+      focusEl(target);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("click", onClick, true);
+    };
   }, []);
 }
