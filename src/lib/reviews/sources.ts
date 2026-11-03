@@ -2,7 +2,7 @@ import "server-only";
 import { kvGet, kvSet } from "../store";
 import { tmdb } from "../tmdb";
 import type { MediaType } from "../types";
-import { aspects, bestExcerpt, clip, cleanText, norm, sentences, sentiment } from "./text";
+import { aspects, bestExcerpt, clip, cleanText, detectLang, norm, sentences, sentiment } from "./text";
 import type { CriticScores, Review } from "./types";
 
 const UA = "QueVemos/1.0 (+https://que-vemos-tv.vercel.app; recomendador personal)";
@@ -49,7 +49,7 @@ export async function tmdbReviews(ref: TitleRef): Promise<Review[]> {
     .slice(0, 12)
     .map((r: any): Review => {
       const text = cleanText(r.content ?? "");
-      const lang = /\b(el|la|que|una|pero|muy)\b/i.test(text.slice(0, 400)) ? "es" : "en";
+      const lang = detectLang(text);
       return {
         source: "tmdb",
         outlet: "TMDB",
@@ -112,7 +112,8 @@ export async function wikipediaReviews(ref: TitleRef): Promise<{ reviews: Review
         .filter((s) => s.length < 400 && !/rotten tomatoes|metacritic|imdb|filmaffinity|agregador|aggregator|cinemascore/i.test(s))
         .map((s) => ({ s, v: Math.abs(sentiment(s)) + (/(critic|crític|praised|elogi|acclaim|aclam)/i.test(s) ? 0.6 : 0) }))
         .sort((a, b) => b.v - a.v)
-        .slice(0, 2);
+        // En español se muestran más frases: la ficha solo enseña opiniones en castellano.
+        .slice(0, lang === "es" ? 4 : 2);
       for (const { s } of ss)
         reviews.push({
           source: "wikipedia",
@@ -211,7 +212,7 @@ export async function redditReviews(ref: TitleRef): Promise<Review[]> {
         url: `https://www.reddit.com${c.permalink}`,
         score: null,
         sentiment: sentiment(text),
-        lang: /\b(el|la|que|una|pero)\b/i.test(text) ? "es" : "en",
+        lang: detectLang(text),
         date: c.created_utc ? new Date(c.created_utc * 1000).toISOString().slice(0, 10) : null,
         votes: c.score,
         aspects: aspects(text),

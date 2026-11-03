@@ -8,7 +8,7 @@ import { focusFirst } from "./spatialNav";
 import { useProfile } from "./profileContext";
 import { ProviderList } from "./Providers";
 import { ReviewsPanel } from "./ReviewsPanel";
-import { Rating } from "./TitleCard";
+import { ScoreLine } from "./Scores";
 
 /**
  * Ficha grande de un título: fondo, póster, datos, plataformas y botones.
@@ -29,7 +29,7 @@ export function TitleFeature({ title, children, fit = false }: { title: TitleDet
           <h2 className="feature-title">{t.title}</h2>
           <p className="feature-meta">
             <span>{t.year ?? "—"}</span>
-            <Rating value={t.rating} />
+            {t.type && t.id ? <ScoreLine type={t.type} id={t.id} tmdb={t.rating} /> : null}
             {runtime && <span>{t.type === "tv" ? `${runtime}/cap.` : runtime}</span>}
             {t.seasons ? <span>{t.seasons} temporada{t.seasons > 1 ? "s" : ""}</span> : null}
             {t.genres?.length ? <span>{t.genres.slice(0, 3).join(" · ")}</span> : null}

@@ -80,21 +80,11 @@ export function ActivityCard({ item, onOpen, compact, autofocus }: { item: Activ
   );
 }
 
-/** Invitación discreta cuando nadie más usa la app (o nadie ha valorado aún). */
-export function SocialInvite({ others, plural }: { others: number; plural: boolean }) {
-  return (
-    <p className="social-invite">
-      {others === 0
-        ? `Qué Vemos gana en compañía: crea un perfil para alguien de casa (pulsa ${plural ? "vuestro" : "tu"} avatar arriba → «Nuevo perfil») y verás aquí lo que le gusta.`
-        : `${others === 1 ? "Hay otro perfil" : `Hay ${others} perfiles más`} en Qué Vemos, pero aún no ${others === 1 ? "ha valorado" : "han valorado"} nada. Cuando lo hagan, lo verás aquí.`}
-    </p>
-  );
-}
-
 /** Franja «En Qué Vemos» de «Para ti»: lo último que han hecho otros perfiles. */
 export function SocialPulse({ data, onOpen, plural }: { data: ActivityResult | null; onOpen: (t: Title) => void; plural: boolean }) {
   if (!data) return null;
-  if (!data.items.length) return <SocialInvite others={data.others} plural={plural} />;
+  // Sin actividad de otros perfiles no se muestra nada (ni invitaciones).
+  if (!data.items.length) return null;
   return (
     <section className="shelf social-pulse" aria-label="En Qué Vemos">
       <h3 className="shelf-title social-title">

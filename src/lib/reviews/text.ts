@@ -117,3 +117,19 @@ export function bestExcerpt(text: string, max = 300): string {
   scored.sort((a, b) => b.v - a.v);
   return clip(scored[0].s, max);
 }
+
+// ---------- Idioma ----------
+
+const ES_WORDS = new Set("el la los las que de del una uno por para con pero muy como más esta este es son fue sus su lo se no al".split(" "));
+const EN_WORDS = new Set("the and of to is it that this was with for but as are his her film movie show not you be on".split(" "));
+
+/** Español o inglés según las palabras más frecuentes (basta para reseñas). */
+export function detectLang(text: string): "es" | "en" {
+  let es = 0;
+  let en = 0;
+  for (const w of text.toLowerCase().slice(0, 1500).split(/[^a-záéíóúñü]+/)) {
+    if (ES_WORDS.has(w)) es++;
+    else if (EN_WORDS.has(w)) en++;
+  }
+  return es >= en ? "es" : "en";
+}

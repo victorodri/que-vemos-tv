@@ -6,7 +6,7 @@ import { titleKey, type Title } from "@/lib/types";
 import { useProfile } from "./profileContext";
 import { Avatar } from "./ProfilePicker";
 import { PosterCard } from "./ForYouView";
-import { ActivityCard, SocialInvite, useActivity } from "./SocialPulse";
+import { ActivityCard, useActivity } from "./SocialPulse";
 
 interface Person {
   profile: PublicProfile;
@@ -43,7 +43,6 @@ export function CommunityView({ onOpen }: { onOpen: (t: Title) => void }) {
           <p className="hint">Lo que les encanta a otros perfiles de Qué Vemos, del más parecido a {profile.plural ? "vosotros" : "ti"} al menos.</p>
         </div>
       </div>
-      {activity && feed.length === 0 && <SocialInvite others={activity.others} plural={profile.plural} />}
       {feed.length > 0 && (
         <section className="shelf" aria-label="Actividad reciente">
           <h3 className="shelf-title social-title">

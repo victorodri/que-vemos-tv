@@ -8,7 +8,7 @@ import type { CriticScores, Review, ReviewSource, ReviewSummary, TitleReviews } 
 // Críticas de un título: se reúnen de todas las fuentes, se resumen (nota de la crítica + aspectos) y se guardan
 // 14 días (las de blogs crecen con el cron). El resumen va aparte, más pequeño, para leerlo en lote al recomendar.
 
-const VERSION = 1;
+const VERSION = 2; // 2: solo opiniones en castellano en `highlights`
 const TTL = 14 * 86400;
 const fullKey = (k: string) => `reviews:v${VERSION}:${k}`;
 const sumKey = (k: string) => `rsum:v${VERSION}:${k}`;
@@ -47,8 +47,12 @@ export function tagWeights(reviews: Review[]): Record<string, number> {
 
 const SOURCE_ORDER: ReviewSource[] = ["rss", "wikipedia", "reddit", "tmdb"];
 
-/** Lo más destacado: variado por fuente (crítica profesional primero), con al menos una pega si la hay. */
-function pickHighlights(reviews: Review[]): Review[] {
+/**
+ * Lo más destacado: solo opiniones en castellano (las de otros idiomas cuentan para la nota y los aspectos,
+ * pero no se enseñan), variadas por fuente (crítica profesional primero) y con al menos una pega si la hay.
+ */
+function pickHighlights(all: Review[]): Review[] {
+  const reviews = all.filter((r) => r.lang === "es");
   const bySource = SOURCE_ORDER.map((s) =>
     reviews
       .filter((r) => r.source === s && r.excerpt.length >= 40)

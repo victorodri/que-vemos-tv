@@ -17,43 +17,98 @@ function scope(): ParentNode {
   return modals[modals.length - 1] ?? document;
 }
 
-function candidates(): HTMLElement[] {
-  return focusables(scope());
+// ---------- Geometría ----------
+// Una sola lectura de posiciones por pulsación (getBoundingClientRect en lote) y solo de lo que está cerca de la
+// pantalla: con cientos de tarjetas, leer todo en cada flecha era lo que hacía lenta la navegación en Fire TV.
+
+type Box = { el: HTMLElement; r: DOMRect };
+
+/** Listas horizontales: izquierda/derecha se mueven dentro de ellas y se recuerda la última posición. */
+const ROW_SEL = "[data-nav-row], .shelf-row, .spot-strip, .tabs, .chips, .feedback, .spot-rate, .actions, .profiles, .reviews-tags";
+const rowOf = (el: Element) => el.closest(ROW_SEL);
+const lastInRow = new WeakMap<Element, HTMLElement>();
+/** Columna «pegajosa»: al subir y bajar por estanterías se mantiene la x de partida, como en las apps de TV. */
+let stickyX: number | null = null;
+
+function boxes(): Box[] {
+  const vh = window.innerHeight;
+  const out: Box[] = [];
+  for (const el of scope().querySelectorAll<HTMLElement>(FOCUSABLE)) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.bottom > -2 * vh && r.top < 3 * vh) out.push({ el, r });
+  }
+  return out;
 }
 
-/** Distancia entre dos intervalos (0 si se solapan). */
-const gap = (a1: number, a2: number, b1: number, b2: number) => Math.max(0, b1 - a2, a1 - b2);
+const cx = (r: DOMRect) => r.left + r.width / 2;
+const inHeader = (el: Element) => !!el.closest("[data-nav-header]");
 
-function nearest(from: HTMLElement, dir: Dir, items: HTMLElement[]): HTMLElement | null {
-  const r = from.getBoundingClientRect();
-  const cx = r.left + r.width / 2;
-  const cy = r.top + r.height / 2;
+function horizontal(from: Box, dir: "left" | "right", all: Box[]): HTMLElement | null {
+  // 1) Dentro de su fila (orden del documento): la siguiente o la anterior, aunque esté fuera de la vista.
+  const row = rowOf(from.el);
+  if (row) {
+    const items = focusables(row);
+    const i = items.indexOf(from.el);
+    const next = items[dir === "right" ? i + 1 : i - 1];
+    if (next) return next;
+  }
+  // 2) En la misma línea de pantalla (solapamiento vertical real), lo más cercano en esa dirección; nunca en diagonal.
+  const r = from.r;
   let best: HTMLElement | null = null;
-  let bestScore = Infinity;
-  for (const el of items) {
-    if (el === from) continue;
-    const b = el.getBoundingClientRect();
-    const bx = b.left + b.width / 2;
-    const by = b.top + b.height / 2;
-    let primary: number;
-    let ortho: number;
-    if (dir === "right" || dir === "left") {
-      if (dir === "right" ? bx <= cx + 1 : bx >= cx - 1) continue;
-      primary = dir === "right" ? Math.max(0, b.left - r.right) : Math.max(0, r.left - b.right);
-      ortho = gap(r.top, r.bottom, b.top, b.bottom);
-    } else {
-      if (dir === "down" ? by <= cy + 1 : by >= cy - 1) continue;
-      primary = dir === "down" ? Math.max(0, b.top - r.bottom) : Math.max(0, r.top - b.bottom);
-      ortho = gap(r.left, r.right, b.left, b.right);
-    }
-    // Penaliza mucho salirse de la fila/columna; desempata por cercanía de centros.
-    const score = primary + ortho * 4 + Math.hypot(bx - cx, by - cy) * 0.01;
-    if (score < bestScore) {
-      bestScore = score;
-      best = el;
+  let bestD = Infinity;
+  for (const b of all) {
+    if (b.el === from.el) continue;
+    const overlap = Math.min(r.bottom, b.r.bottom) - Math.max(r.top, b.r.top);
+    if (overlap < Math.min(r.height, b.r.height) * 0.4) continue;
+    const d = dir === "right" ? b.r.left - r.right : r.left - b.r.right;
+    if (d < -r.width * 0.5) continue;
+    if (d < bestD) {
+      bestD = d;
+      best = b.el;
     }
   }
   return best;
+}
+
+function vertical(from: Box, dir: "up" | "down", all: Box[]): HTMLElement | null {
+  const r = from.r;
+  let cands = all.filter((b) => b.el !== from.el && (dir === "down" ? b.r.top > r.top + r.height * 0.5 : b.r.bottom < r.bottom - r.height * 0.5));
+  // La cabecera es fija: al subir, «parece» lo más cercano aunque haya filas ocultas encima. Solo cuenta si no hay nada más.
+  if (dir === "up" && !inHeader(from.el)) {
+    const body = cands.filter((b) => !inHeader(b.el));
+    if (body.length) cands = body;
+  }
+  if (!cands.length) return null;
+  // Al subir a la cabecera se entra siempre por la pestaña actual (no por el avatar ni por la columna).
+  if (dir === "up" && cands.every((b) => inHeader(b.el))) {
+    const tab = cands.find((b) => b.el.matches('.tab[aria-current="page"]'));
+    if (tab) return tab.el;
+  }
+  // Línea más cercana en esa dirección…
+  const dist = (b: Box) => Math.max(0, dir === "down" ? b.r.top - r.bottom : r.top - b.r.bottom);
+  let first = cands[0];
+  for (const b of cands) if (dist(b) < dist(first)) first = b;
+  const tol = Math.max(12, first.r.height * 0.6);
+  const line =
+    dir === "down" ? cands.filter((b) => b.r.top <= first.r.top + tol) : cands.filter((b) => b.r.bottom >= first.r.bottom - tol);
+  // …y dentro de ella: en la cabecera, la pestaña actual; si no, lo que quede en la misma columna, salvo que esa
+  // fila recuerde dónde se quedó (volver a una estantería deja el foco en la tarjeta de antes).
+  const tab = line.find((b) => b.el.matches('.tab[aria-current="page"]'));
+  if (tab) return tab.el;
+  const x = stickyX ?? cx(r);
+  let best = line[0];
+  let bestD = Infinity;
+  for (const b of line) {
+    const d = x >= b.r.left && x <= b.r.right ? 0 : Math.min(Math.abs(b.r.left - x), Math.abs(b.r.right - x));
+    if (d < bestD || (d === bestD && Math.abs(cx(b.r) - x) < Math.abs(cx(best.r) - x))) {
+      bestD = d;
+      best = b;
+    }
+  }
+  const row = rowOf(best.el);
+  const remembered = row ? lastInRow.get(row) : undefined;
+  if (remembered && remembered !== from.el && line.some((b) => b.el === remembered)) return remembered;
+  return best.el;
 }
 
 /** Elementos enfocables visibles dentro de un contenedor, en orden del documento. */
@@ -64,16 +119,104 @@ export function focusables(root: ParentNode): HTMLElement[] {
   });
 }
 
+// ---------- Desplazamiento ----------
+// Animación propia corta (140 ms) que se cancela con la siguiente pulsación: con el «smooth» del navegador, al
+// mantener una flecha se acumulaban desplazamientos y la tele iba a tirones y con retraso.
+
+const animations = new Map<Element | Window, number>();
+const reduceMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function animateScroll(target: Element | Window, axis: "x" | "y", to: number) {
+  const get = () => (target === window ? (axis === "y" ? window.scrollY : window.scrollX) : axis === "y" ? (target as Element).scrollTop : (target as Element).scrollLeft);
+  const set = (v: number) => {
+    if (target === window) window.scrollTo(axis === "y" ? { top: v } : { left: v });
+    else if (axis === "y") (target as Element).scrollTop = v;
+    else (target as Element).scrollLeft = v;
+  };
+  const key = target;
+  const prev = animations.get(key);
+  if (prev) cancelAnimationFrame(prev);
+  const from = get();
+  if (Math.abs(to - from) < 1) return;
+  if (reduceMotion()) return set(to);
+  const t0 = performance.now();
+  const dur = 140;
+  const step = (t: number) => {
+    const k = Math.min(1, (t - t0) / dur);
+    set(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) animations.set(key, requestAnimationFrame(step));
+    else animations.delete(key);
+  };
+  animations.set(key, requestAnimationFrame(step));
+}
+
+/** Contenedor con scroll propio más cercano en un eje (fila de tarjetas, ficha modal…), o la ventana. */
+function scroller(el: HTMLElement, axis: "x" | "y"): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const st = getComputedStyle(p);
+    const ov = axis === "x" ? st.overflowX : st.overflowY;
+    if (ov !== "auto" && ov !== "scroll") continue;
+    // Una fila con overflow-x también computa overflow-y «auto» (regla de CSS): solo cuenta si de verdad desborda.
+    if (axis === "x" ? p.scrollWidth > p.clientWidth + 2 : p.scrollHeight > p.clientHeight + 24 && getComputedStyle(p).overflowX !== "auto") return p;
+  }
+  return null;
+}
+
+/** Deja el elemento (y su bloque: estantería, destacado…) a la vista, por debajo de la cabecera fija. */
+function reveal(el: HTMLElement) {
+  // Horizontal: dentro de su fila, con un margen para el anillo de foco.
+  const hs = scroller(el, "x");
+  if (hs) {
+    const rr = hs.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    const pad = Math.min(48, rr.width * 0.06);
+    let to = hs.scrollLeft;
+    if (er.left < rr.left + pad) to -= rr.left + pad - er.left;
+    else if (er.right > rr.right - pad) to += er.right - (rr.right - pad);
+    animateScroll(hs, "x", Math.max(0, to));
+  }
+  // Vertical. La cabecera es fija: lo que hay en ella no necesita desplazamiento.
+  if (inHeader(el)) return;
+  const vs = scroller(el, "y");
+  let top0: number;
+  let bottom0: number;
+  if (vs) {
+    const vr = vs.getBoundingClientRect();
+    top0 = vr.top;
+    bottom0 = vr.bottom;
+  } else {
+    top0 = Math.max(0, document.querySelector("[data-nav-header]")?.getBoundingClientRect().bottom ?? 0);
+    // En móvil las pestañas son una barra fija abajo: no debe tapar la fila enfocada.
+    const bar = document.querySelector<HTMLElement>(".tabs");
+    bottom0 = bar && getComputedStyle(bar).position === "fixed" ? bar.getBoundingClientRect().top : window.innerHeight;
+  }
+  const margin = 10;
+  const er = el.getBoundingClientRect();
+  // Se intenta enseñar el bloque entero (estantería con su título, destacado…); si no cabe, solo el elemento.
+  const block = el.closest<HTMLElement>("[data-nav-block], .shelf, .spot, section");
+  const br = block && block.getBoundingClientRect().height <= (bottom0 - top0) * 0.9 ? block.getBoundingClientRect() : er;
+  const current = vs ? vs.scrollTop : window.scrollY;
+  let to = current;
+  if (br.top < top0 + margin) to += br.top - (top0 + margin);
+  else if (er.bottom > bottom0 - margin) to += Math.min(br.bottom - (bottom0 - margin), br.top - (top0 + margin));
+  // Cerca del principio de la vista: arriba del todo, para que al volver a subir se vea su cabecera.
+  const absTop = er.top - top0 + current;
+  if (absTop < (bottom0 - top0) * 0.45) to = 0;
+  animateScroll(vs ?? window, "y", Math.max(0, to));
+}
+
 export function focusEl(el: HTMLElement | null | undefined) {
   if (!el) return;
   el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  const row = rowOf(el);
+  if (row) lastInRow.set(row, el);
+  reveal(el);
 }
 
 /** Enfoca el elemento marcado con data-autofocus (o el primero enfocable) dentro del ámbito activo. */
 export function focusFirst() {
   const root = scope();
-  focusEl(root.querySelector<HTMLElement>("[data-autofocus]") ?? candidates()[0]);
+  focusEl(root.querySelector<HTMLElement>("[data-autofocus]") ?? focusables(root)[0]);
 }
 
 // Pila de «Atrás» locales: un panel o diálogo abierto (filtros, PIN…) se cierra antes de que actúe la app.
@@ -100,6 +243,8 @@ export function runBack(general: () => void) {
   if (top) top.current();
   else general();
 }
+
+let lastMove = 0;
 
 export function useSpatialNav(onBack: () => void) {
   const backRef = useRef(onBack);
@@ -129,20 +274,28 @@ export function useSpatialNav(onBack: () => void) {
         if (dir === "right" && end < active.value.length) return;
       }
       e.preventDefault();
-      const items = candidates();
-      const current = active instanceof HTMLElement && items.includes(active) ? active : null;
-      if (!current) return focusFirst();
+      // Con la flecha mantenida, como mucho un paso cada 55 ms: así no se acumula trabajo y el foco no «se escapa».
+      const now = performance.now();
+      if (e.repeat && now - lastMove < 55) return;
+      lastMove = now;
+      const all = boxes();
+      const from = active instanceof HTMLElement ? all.find((b) => b.el === active) : undefined;
+      const current = from?.el ?? null;
+      if (!current || !from) return focusFirst();
       // Al bajar desde la barra de pestañas se entra por el elemento principal de la vista (el de data-autofocus),
       // no por el que quede justo debajo de la pestaña: así «abajo» siempre lleva al mismo sitio.
       if (dir === "down" && current.closest("[data-nav-header]")) {
         const entry = document.querySelector<HTMLElement>("main [data-autofocus]");
-        if (entry && items.includes(entry)) {
+        if (entry && all.some((b) => b.el === entry)) {
           playMove();
           return focusEl(entry);
         }
       }
-      const target = nearest(current, dir, items);
-      if (target) playMove();
+      const target = dir === "left" || dir === "right" ? horizontal(from, dir, all) : vertical(from, dir, all);
+      if (!target) return;
+      if (dir === "left" || dir === "right") stickyX = null;
+      else stickyX ??= cx(from.r);
+      playMove();
       focusEl(target);
     };
     window.addEventListener("keydown", onKey);

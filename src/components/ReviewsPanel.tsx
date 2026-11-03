@@ -1,28 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
-import { getJSON } from "@/lib/client";
-import { TAG_LABEL, type TitleReviews } from "@/lib/reviews/types";
+import { TAG_LABEL } from "@/lib/reviews/types";
 import type { MediaType } from "@/lib/types";
+import { useReviews } from "./Scores";
 
 const SOURCE_NAME: Record<string, string> = { tmdb: "TMDB", wikipedia: "Wikipedia", rss: "blogs y medios", reddit: "Reddit" };
 
 /**
- * «Qué dice la crítica»: notas de agregadores, aspectos que repiten las críticas y opiniones destacadas
+ * «Qué dice la crítica»: aspectos que repiten las críticas y opiniones destacadas
  * (fragmentos con su fuente). Cada opinión es un botón para que el mando pueda recorrerlas y la ficha se desplace.
  */
 export function ReviewsPanel({ type, id }: { type: MediaType; id: number }) {
-  const [data, setData] = useState<TitleReviews | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getJSON<TitleReviews>(`/api/reviews/${type}/${id}`, ctrl.signal).then(setData, () => !ctrl.signal.aborted && setFailed(true));
-    return () => ctrl.abort();
-  }, [type, id]);
-
-  if (failed) return null;
+  // Las notas (TMDB, IMDb, Rotten Tomatoes, Metacritic) van en pequeño en la línea de datos de la ficha (Scores.tsx).
+  const data = useReviews(type, id);
+  if (data === null) return null;
   if (!data) return <p className="hint reviews-loading">Buscando críticas en blogs, Wikipedia, Reddit y TMDB…</p>;
-  if (!data.n && !data.scores.rt && !data.scores.metacritic) return <p className="hint reviews-loading">Aún no hemos encontrado críticas de este título.</p>;
+  if (!data.highlights.length && !Object.keys(data.tags).length) return <p className="hint reviews-loading">Aún no hay críticas en castellano de este título.</p>;
 
   const tags = Object.entries(data.tags)
     .sort((a, b) => b[1] - a[1])
@@ -31,12 +23,6 @@ export function ReviewsPanel({ type, id }: { type: MediaType; id: number }) {
     <section className="reviews" aria-label="Qué dice la crítica">
       <div className="reviews-head">
         <h3>Qué dice la crítica</h3>
-        <div className="reviews-scores">
-          {data.scores.rt != null && <span className="score-pill">🍅 {data.scores.rt} %</span>}
-          {data.scores.metacritic != null && <span className="score-pill">Metacritic {data.scores.metacritic}</span>}
-          {data.scores.imdb != null && <span className="score-pill">IMDb {data.scores.imdb.toFixed(1)}</span>}
-          {data.critic != null && <span className="score-pill score-pill--main">Consenso {Math.round(data.critic * 100)}/100</span>}
-        </div>
       </div>
       {tags.length > 0 && (
         <p className="reviews-tags">
@@ -56,13 +42,12 @@ export function ReviewsPanel({ type, id }: { type: MediaType; id: number }) {
               {r.author ? ` · ${r.author}` : ""}
               {r.score != null ? ` · ${Math.round(r.score * 10)}/10` : ""}
               {r.votes && r.source === "reddit" ? ` · ▲ ${r.votes}` : ""}
-              {r.lang === "en" ? " · en inglés" : ""}
             </span>
           </button>
         ))}
       </div>
       <p className="hint reviews-foot">
-        Fragmentos de {data.sources.map((s) => SOURCE_NAME[s] ?? s).join(", ")} ({data.n} opiniones). El consenso también afina tus recomendaciones.
+        Opiniones en castellano de {[...new Set(data.highlights.map((h) => SOURCE_NAME[h.source] ?? h.source))].join(", ")}. La nota global tiene en cuenta {data.n} opiniones y también afina tus recomendaciones.
       </p>
     </section>
   );

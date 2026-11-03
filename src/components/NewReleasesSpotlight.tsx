@@ -81,17 +81,9 @@ export function NewReleasesSpotlight({ onOpen }: { onOpen: (t: Title) => void })
     focusEl(to);
   };
 
-  // Con el mando, al entrar en cualquier botón del destacado se muestra el bloque entero (destacado + miniaturas):
-  // si no, al bajar a las miniaturas el destacado quedaría medio tapado por la cabecera.
-  const onFocusIn = (e: React.FocusEvent<HTMLElement>) => {
-    const section = e.currentTarget;
-    if (!(e.target as HTMLElement).matches(":focus-visible")) return;
-    requestAnimationFrame(() => section.scrollIntoView({ block: "nearest", behavior: "smooth" }));
-  };
-
   const meta = [it.type === "tv" ? "Serie" : "Película", it.year].filter(Boolean).join(" · ");
   return (
-    <section className="spot" aria-label="Estrenos que están dando que hablar" onKeyDown={onKeyDown} onFocus={onFocusIn}>
+    <section className="spot" aria-label="Estrenos que están dando que hablar" onKeyDown={onKeyDown}>
       <h3 className="shelf-title spot-heading">
         Estrenos que están dando que hablar
         <span className="spot-count" aria-hidden>
