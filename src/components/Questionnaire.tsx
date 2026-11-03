@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getJSON } from "@/lib/client";
-import { DEFAULT_PREFS, GENRE_GROUPS, type GenreGroupId, type Prefs } from "@/lib/prefs";
+import { DEFAULT_PREFS, GENRE_GROUPS, PERSONA_QUESTIONS, type GenreGroupId, type Prefs } from "@/lib/prefs";
 import type { FeedbackEntry, Signal } from "@/lib/reco/types";
 import { titleKey, type Meta, type Title } from "@/lib/types";
 import { focusFirst } from "./spatialNav";
@@ -88,6 +88,17 @@ function buildSteps(pareja: boolean, meta: Meta, withSeeds: boolean): Step[] {
       get: (a) => a.avoid,
       set: (a, v) => ({ ...a, avoid: v as GenreGroupId[] }),
     },
+    // Forma de ser: afina los aspectos que destacan las críticas (tensa, lenta, oscura, emotiva…).
+    ...PERSONA_QUESTIONS.map(
+      (q): ChoiceStep => ({
+        kind: "choice",
+        title: pareja ? q.q.replace("te pones", "os ponéis").replace("buscas", "buscáis").replace("Te gusta", "Os gusta").replace("te importa", "os importa").replace("te emocione", "os emocione") : q.q,
+        hint: "Afina lo que recomendamos según lo que dicen las críticas.",
+        options: q.options.map((o) => ({ value: String(o.v), label: o.label, icon: o.emoji })),
+        get: (a) => (a.persona?.[q.id] !== undefined ? [String(a.persona[q.id])] : []),
+        set: (a, [v]) => ({ ...a, persona: { ...(a.persona ?? {}), [q.id]: Number(v) } }),
+      }),
+    ),
     {
       kind: "choice",
       title: w("¿Cuánto tiempo sueles tener?", "¿Cuánto tiempo soléis tener?"),

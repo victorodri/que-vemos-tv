@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { isProfileId } from "@/config/profiles";
+import { getMeta } from "./profiles";
 import { getProfile } from "./store";
 import { TmdbError } from "./tmdb";
 import type { ProfileData } from "./types";
@@ -14,6 +14,6 @@ export function errorResponse(err: unknown) {
 
 /** Datos del perfil, o null si no hay perfil válido. */
 export async function loadProfile(profile: string | null): Promise<ProfileData | null> {
-  if (!profile || !isProfileId(profile)) return null;
-  return getProfile(profile);
+  if (!(await getMeta(profile))) return null;
+  return getProfile(profile!);
 }

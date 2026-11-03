@@ -1,5 +1,7 @@
 import "server-only";
 import { kvMGet, kvSet } from "../store";
+import { getSummaries } from "../reviews";
+import { TAG_LABEL } from "../reviews/types";
 import { IMG, tmdb } from "../tmdb";
 import type { MediaType } from "../types";
 import type { ItemFeatures } from "./types";
@@ -22,6 +24,7 @@ export const FAMILY_WEIGHT = {
   l: 0.45, // idioma original
   t: 0.3, // película o serie
   r: 0.3, // duración
+  a: 0.5, // aspecto que destacan las críticas («tensa», «giros», «lenta»…), ver src/lib/reviews
 } as const;
 
 export const parseKey = (key: string): { type: MediaType; id: number } => {
@@ -148,7 +151,27 @@ export async function getManyFeatures(keys: string[], concurrency = 8): Promise<
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, missing.length) }, worker));
-  return out;
+  return withReviewAspects(out);
+}
+
+/**
+ * Añade a cada título los aspectos que destacan sus críticas (`a:tensa`…), si ya se han calculado. No se guardan en
+ * la caché del título: las críticas se actualizan aparte y así el vector siempre lleva las últimas.
+ */
+async function withReviewAspects(items: Map<string, ItemFeatures>): Promise<Map<string, ItemFeatures>> {
+  const sums = await getSummaries([...items.keys()]).catch(() => new Map());
+  for (const [k, sum] of sums) {
+    const it = items.get(k);
+    if (!it || !Object.keys(sum.tags).length) continue;
+    const f = { ...it.f };
+    const labels = { ...it.labels };
+    for (const [tag, w] of Object.entries(sum.tags as Record<string, number>)) {
+      f[`a:${tag}`] = FAMILY_WEIGHT.a * Math.min(1, w * 2);
+      labels[`a:${tag}`] = TAG_LABEL[tag] ?? tag;
+    }
+    items.set(k, { ...it, f: normalize(f), labels, critic: sum.critic });
+  }
+  return items;
 }
 
 export async function getFeatures(key: string): Promise<ItemFeatures | null> {

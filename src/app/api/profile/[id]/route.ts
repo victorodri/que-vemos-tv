@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
-import { isProfileId } from "@/config/profiles";
 import { errorResponse } from "@/lib/api";
+import { authorize, recordNetwork } from "@/lib/profiles";
 import { sanitizePrefs } from "@/lib/prefs";
 import { hashOf } from "@/lib/client";
 import { DEFAULT_FILTERS, filtersToParams, paramsToFilters } from "@/lib/filters";
@@ -62,10 +62,13 @@ function sanitize(body: Partial<ProfileData>, prev: ProfileData): ProfileData {
   };
 }
 
-export async function GET(_req: Request, ctx: RouteContext<"/api/profile/[id]">) {
+export async function GET(req: Request, ctx: RouteContext<"/api/profile/[id]">) {
   const { id } = await ctx.params;
-  if (!isProfileId(id)) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
+  const auth = await authorize(req, id);
+  if (auth instanceof NextResponse) return auth;
   try {
+    // Cada vez que se abre un perfil se apunta desde qué red (para proponerlo por defecto en esa casa).
+    after(() => recordNetwork(req, id).catch(() => {}));
     return NextResponse.json(await getProfile(id));
   } catch (err) {
     return errorResponse(err);
@@ -74,7 +77,8 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/profile/[id]">)
 
 export async function PUT(req: Request, ctx: RouteContext<"/api/profile/[id]">) {
   const { id } = await ctx.params;
-  if (!isProfileId(id)) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
+  const auth = await authorize(req, id);
+  if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json();
     const prev = await getProfile(id);

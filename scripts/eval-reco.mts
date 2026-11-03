@@ -81,14 +81,18 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof fetch;
 
 // ---------- Motor (después de parchear fetch) ----------
-const ENGINE = arg("engine", "src");
-const engine = (
-  ENGINE === "quota" ? await import("./variants/engine-quota") : ENGINE === "head" ? await import("./variants/engine-head") : await import("../src/lib/reco/engine")
-) as typeof import("../src/lib/reco/engine");
-if (ENGINE === "quota") (engine as unknown as { setSourceQuota: (q: number) => void }).setSourceQuota(Number(arg("quota", "0.4")));
+const ENGINE = "src";
+// Para comparar con una versión anterior del motor: `git stash` o `git worktree` y ejecutar ahí la misma evaluación.
+const engine = await import("../src/lib/reco/engine");
 const model = await import("../src/lib/reco/model");
 const features = await import("../src/lib/reco/features");
 const store = await import("../src/lib/store");
+// Registro de perfiles de la simulación: dos individuales y su pareja enlazada (los perfiles ya no son fijos).
+await store.kvSet("profiles:index", [
+  { id: "victor", name: "Víctor", kind: "single", members: [], emoji: "🎬", color: "#4f8cff", pin: null, createdAt: 0 },
+  { id: "alba", name: "Alba", kind: "single", members: [], emoji: "🦊", color: "#ffb547", pin: null, createdAt: 0 },
+  { id: "pareja", name: "Víctor y Alba", kind: "couple", members: ["victor", "alba"], emoji: "💑", color: "#ff5c8a", pin: null, createdAt: 0 },
+]);
 type ItemFeatures = import("../src/lib/reco/types").ItemFeatures;
 type Signal = import("../src/lib/reco/types").Signal;
 type ProfileData = import("../src/lib/types").ProfileData;
@@ -118,7 +122,10 @@ async function resetStore() {
   if (!existsSync(STORE_FILE)) return;
   const data = JSON.parse(await fs.readFile(STORE_FILE, "utf8"));
   const kv = data._kv ?? {};
-  const keep = Object.fromEntries(Object.entries(kv).filter(([k]) => k.startsWith("item:") || k.startsWith("seeds:") || k.startsWith("pool:") || k.startsWith("list:")));
+  // Se conservan cachés (rasgos, semillas, críticas) y el registro de perfiles; lo aprendido se borra.
+  const keep = Object.fromEntries(
+    Object.entries(kv).filter(([k]) => ["item:", "seeds:", "pool:", "list:", "rsum:", "reviews:", "rss:", "profiles:"].some((p) => k.startsWith(p))),
+  );
   await fs.writeFile(STORE_FILE, JSON.stringify({ _kv: keep }));
 }
 
@@ -413,6 +420,7 @@ const VARIANTS: Variant[] = [
   { name: "noItemExplain", apply: () => Object.assign(engine.TUNING, { itemExplainMin: 2 }) },
   { name: "noBecauseFloor", apply: () => Object.assign(engine.TUNING, { becauseMinVotes: { movie: 0, tv: 0 } }) },
   { name: "noRomanceKw", apply: () => Object.assign(engine.TUNING, { romanceKwPenalty: 0 }) },
+  { name: "noCritic", apply: () => Object.assign(engine.TUNING, { wCritic: 0 }) },
   { name: "gemsAllLangs", apply: () => Object.assign(engine.TUNING, { gemsLangs: 0 }) },
   { name: "noSharedRet", apply: () => Object.assign(engine.TUNING, { sharedRetrieval: false }) },
   { name: "gcalNone", apply: () => Object.assign(engine.TUNING, { groupCalibration: "none" }) },
@@ -459,6 +467,20 @@ function summarize(res: Awaited<ReturnType<typeof simulate>>) {
   };
   rows.push(`\nResumen ${res.label}: ` + Object.entries(summary).map(([k, v]) => `${k}=${fmt(v)}`).join(" "));
   return { rows: rows.join("\n"), summary };
+}
+
+// --reviews N: calcula antes las críticas (src/lib/reviews) de hasta N títulos ya cacheados, para medir su efecto
+// (aspectos `a:` y nota de la crítica). Se guardan en el almacén de evaluación y se reutilizan.
+const WARM_REVIEWS = Number(arg("reviews", "0"));
+if (WARM_REVIEWS > 0 && existsSync(STORE_FILE)) {
+  const { warmReviews } = await import("../src/lib/reviews");
+  const kv = (JSON.parse(await fs.readFile(STORE_FILE, "utf8"))._kv ?? {}) as Record<string, unknown>;
+  const keys = Object.keys(kv)
+    .filter((k) => /^item:v\d+:/.test(k))
+    .map((k) => k.replace(/^item:v\d+:/, ""));
+  process.stderr.write(`Críticas: ${keys.length} títulos en caché, calculando hasta ${WARM_REVIEWS}…\n`);
+  const done = await warmReviews(keys, WARM_REVIEWS);
+  process.stderr.write(`Críticas nuevas: ${done}\n`);
 }
 
 const wanted = arg("variants", "current").split(",");

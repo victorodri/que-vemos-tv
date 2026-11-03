@@ -2,8 +2,10 @@
 
 App para decidir en pareja qué peli o serie ver, pensada para usarse en la tele (Fire TV / Android TV) con el mando: flechas para moverse, OK para elegir y Atrás para volver. La web vive en Vercel y en la tele se instala como APK (que carga esa web, así que se actualiza sola).
 
-- **Cuestionario inicial**: la primera vez que entra cada perfil responde 8 preguntas (pelis o series, géneros favoritos y vetados, duración, época, exigencia, éxitos o joyas ocultas y plataformas). Con eso se calculan las recomendaciones de «Para ti» y «Sorpréndeme». Se puede repetir desde Ajustes.
-- **Perfiles**: Víctor, Víctor + Alba y Alba. Cada uno tiene su lista «Quiero verla», sus vistas, sus plataformas y sus últimos filtros.
+- **Cuestionario inicial**: la primera vez que entra cada perfil puntúa pósters y responde unas preguntas (pelis o series, géneros favoritos y vetados, forma de ser —pensar o desconectar, historias oscuras, ritmo, emoción—, duración, época, exigencia, éxitos o joyas ocultas y plataformas). Con eso se calculan las recomendaciones de «Para ti» y «Sorpréndeme». Se puede repetir desde Ajustes.
+- **Perfiles**: se crean desde la tele (individual o en pareja, nombre, avatar y PIN). Cada uno tiene su lista «Quiero verla», sus vistas, sus plataformas y sus últimos filtros. Cada tele recuerda su perfil; en una tele nueva se propone el más usado desde esa red.
+- **Comunidad**: recomendaciones de lo que les encantó a los perfiles con gustos parecidos.
+- **Críticas**: cada ficha muestra lo que dicen blogs, medios, Wikipedia, TMDB y (con claves) Reddit, Rotten Tomatoes y Metacritic; también afinan las recomendaciones.
 - **Buscar**: por texto o con filtros (tipo, género, duración máxima, nota mínima, año y «solo mis plataformas»).
 - **Sorpréndeme**: propone un título al azar con los filtros puestos, sin repetir los ya vistos. «Otra» propone otro.
 - **Dónde verla**: plataformas de streaming en España (Netflix, Max, Disney+, Prime Video…) según TMDB / JustWatch.
@@ -48,7 +50,8 @@ A partir de ahí, cada `git push` a `main` se publica solo en 1–2 minutos.
 
 | Ruta | Qué hace |
 | --- | --- |
-| `src/config/profiles.ts` | Lista de perfiles (nombre, iniciales, color) |
+| `src/lib/profiles.ts` | Registro de perfiles, PIN, sesiones y perfil por defecto según la red |
+| `src/lib/reviews/` | Críticas: fuentes, análisis de texto y resumen para el recomendador |
 | `src/lib/tmdb.ts` | Llamadas a TMDB (discover, search, detalle, watch/providers, región ES) |
 | `src/lib/store.ts` | Guardado de perfiles en Upstash Redis o en un archivo local |
 | `src/app/api/*` | API interna: la API key solo vive en el servidor |

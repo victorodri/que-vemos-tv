@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Meta } from "@/lib/types";
 import { useProfile } from "./profileContext";
 
-export function SettingsView({ meta, onRedo }: { meta: Meta; onRedo: () => void }) {
+export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: () => void; onForget: () => void }) {
   const profile = useProfile();
   const { platforms, seen } = profile.data;
   const [confirmClear, setConfirmClear] = useState(false);
@@ -48,6 +48,17 @@ export function SettingsView({ meta, onRedo }: { meta: Meta; onRedo: () => void 
           {confirmClear ? "Pulsa otra vez para borrar el historial" : "Borrar historial de vistas"}
         </button>
       )}
+
+      <h2>Perfil</h2>
+      <p className="hint">
+        {profile.meta.emoji} {profile.meta.name} · {profile.plural ? "perfil en pareja" : "perfil individual"}. Los demás perfiles de Qué Vemos solo ven tu nombre y lo que te
+        encantó.
+      </p>
+      <div>
+        <button className="btn" onClick={onForget}>
+          🔒 Cerrar sesión en esta tele
+        </button>
+      </div>
 
       {meta.storage === "local" && (
         <p className="hint warn">

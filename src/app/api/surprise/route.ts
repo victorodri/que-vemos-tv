@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isProfileId } from "@/config/profiles";
 import { errorResponse } from "@/lib/api";
+import { authorize } from "@/lib/profiles";
 import { paramsToFilters } from "@/lib/filters";
 import { KEY_RE } from "@/lib/reco/feedback";
 import { surpriseBatch } from "@/lib/reco/surprise";
@@ -15,7 +15,8 @@ export const maxDuration = 30;
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const profile = sp.get("profile") ?? "";
-  if (!isProfileId(profile)) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
+  const auth = await authorize(req, profile);
+  if (auth instanceof NextResponse) return auth;
   const f = { ...paramsToFilters(sp), query: "" };
   const n = Math.min(Math.max(Number(sp.get("n")) || 4, 1), 6);
   const skip = (sp.get("skip") ?? "").split(",").filter((k) => KEY_RE.test(k)).slice(0, 200);

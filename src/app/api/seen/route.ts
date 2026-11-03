@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, loadProfile } from "@/lib/api";
+import { authorize } from "@/lib/profiles";
 import type { RecoEvent } from "@/lib/reco/types";
 import { listRange } from "@/lib/store";
 import { getDetail } from "@/lib/tmdb";
@@ -30,6 +31,8 @@ async function mapLimit<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): 
 export async function GET(req: NextRequest) {
   try {
     const profileId = req.nextUrl.searchParams.get("profile");
+    const auth = await authorize(req, profileId);
+    if (auth instanceof NextResponse) return auth;
     const profile = await loadProfile(profileId);
     if (!profile) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
 

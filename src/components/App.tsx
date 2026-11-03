@@ -1,14 +1,17 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PROFILES, isProfileId, type ProfileId } from "@/config/profiles";
 import { DEFAULT_FILTERS } from "@/lib/filters";
 import type { Prefs } from "@/lib/prefs";
 import type { ImplicitEvent, Signal } from "@/lib/reco/types";
-import { getJSON, toSaved } from "@/lib/client";
+import { authHeaders, getJSON, HttpError, rememberToken, sendJSON, setActiveToken, tokenOf, toSaved } from "@/lib/client";
+import type { PublicProfile } from "@/lib/profiles";
 import { titleKey, type Filters, type MediaType, type Meta, type ProfileData, type SavedTitle, type Title } from "@/lib/types";
 import { ForYouView } from "./ForYouView";
 import { ListView } from "./ListView";
-import { ProfilePicker } from "./ProfilePicker";
+import { CommunityView } from "./CommunityView";
+import { PinPad } from "./PinPad";
+import { ProfileCreator } from "./ProfileCreator";
+import { Avatar, ProfilePicker } from "./ProfilePicker";
 import { Questionnaire, type QuizRatings } from "./Questionnaire";
 import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
@@ -18,7 +21,8 @@ import { focusEl, focusFirst, focusables, useSpatialNav } from "./spatialNav";
 import { SurpriseView } from "./SurpriseView";
 import { DetailModal } from "./TitleFeature";
 
-type Tab = "foryou" | "search" | "surprise" | "list" | "seen" | "settings";
+type Tab = "foryou" | "search" | "surprise" | "community" | "list" | "seen" | "settings";
+type ProfileId = string;
 type Detail = { type: MediaType; id: number; preview?: Title | SavedTitle };
 // El estado de navegación vive en el historial del navegador, así el botón «Atrás» del mando funciona.
 type Nav = { profile: ProfileId | null; tab: Tab; detail: Detail | null };
@@ -29,7 +33,8 @@ const LAST_PROFILE = "quevemos:lastProfile";
 const TABS: { id: Tab; label: string }[] = [
   { id: "foryou", label: "Para ti" },
   { id: "search", label: "Buscar" },
-  { id: "surprise", label: "🎲 Sorpréndeme" },
+  { id: "surprise", label: "Sorpréndeme" },
+  { id: "community", label: "Comunidad" },
   { id: "list", label: "Mi lista" },
   { id: "seen", label: "Vistos" },
   { id: "settings", label: "Ajustes" },
@@ -43,8 +48,15 @@ function readLastProfile() {
   }
 }
 
+type ProfilesRes = { profiles: PublicProfile[]; suggested: string | null; emojis: string[]; colors: string[] };
+
 export default function App() {
   const [nav, setNav] = useState<Nav>(HOME);
+  // Perfiles de la app, el propuesto para esta red y, si toca, el alta o el PIN que se está pidiendo.
+  const [registry, setRegistry] = useState<ProfilesRes | null>(null);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [pinFor, setPinFor] = useState<PublicProfile | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [profile, setProfile] = useState<{ id: ProfileId; data: ProfileData } | null>(null);
@@ -60,7 +72,7 @@ export default function App() {
   useEffect(() => {
     setLastUsed(readLastProfile());
     const s = history.state as Nav | null;
-    if (s && "tab" in s && (s.profile === null || isProfileId(s.profile))) setNav(s);
+    if (s && "tab" in s && (s.profile === null || typeof s.profile === "string")) setNav(s);
     else history.replaceState(HOME, "");
     const onPop = (e: PopStateEvent) => setNav((e.state as Nav | null) ?? HOME);
     window.addEventListener("popstate", onPop);
@@ -86,11 +98,39 @@ export default function App() {
     getJSON<Meta>("/api/meta").then(setMeta, (e) => setMetaError(e.message));
   }, []);
 
+  const loadRegistry = useCallback(
+    () =>
+      getJSON<ProfilesRes>("/api/profiles").then(
+        (r) => {
+          setRegistry(r);
+          return r;
+        },
+        (e) => {
+          setRegistryError(e.message);
+          return null;
+        },
+      ),
+    [],
+  );
+
+  // Al arrancar: si esta tele ya entró en su último perfil (tiene su token), se abre directamente; si no, el
+  // selector propone el último de la tele o el que más se usa desde esta red.
+  useEffect(() => {
+    loadRegistry().then((r) => {
+      const s = history.state as Nav | null;
+      if (!r || s?.profile) return;
+      const last = readLastProfile();
+      const p = r.profiles.find((x) => x.id === last);
+      if (p && tokenOf(p.id)) enter(p.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const save = (p: { id: ProfileId; data: ProfileData }) => {
     dirty.current = false;
     fetch(`/api/profile/${p.id}`, {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: authHeaders({ "content-type": "application/json" }),
       body: JSON.stringify(p.data),
       keepalive: true,
     }).catch(() => (dirty.current = true));
@@ -102,12 +142,21 @@ export default function App() {
     if (profile && dirty.current) save(profile); // no perder cambios del perfil anterior
     setProfile(null);
     setProfileError(null);
+    setActiveToken(tokenOf(id));
     getJSON<ProfileData>(`/api/profile/${id}`).then(
       (data) => {
         setProfile({ id, data });
         setFiltersState({ ...DEFAULT_FILTERS, ...data.lastFilters });
       },
-      (e) => setProfileError(e.message),
+      (e) => {
+        // Token caducado (cambió el PIN) o de otro dispositivo: se vuelve a pedir el PIN.
+        if (e instanceof HttpError && e.status === 401) {
+          rememberToken(id, null);
+          replace(HOME);
+          const p = registry?.profiles.find((x) => x.id === id);
+          if (p) setPinFor(p);
+        } else setProfileError(e.message);
+      },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav.profile]);
@@ -147,7 +196,7 @@ export default function App() {
   const feedbackQueue = useRef<Promise<unknown>>(Promise.resolve());
   const postFeedback = useCallback((body: object) => {
     const send = () =>
-      fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(
+      fetch("/api/feedback", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body), keepalive: true }).catch(
         () => {},
       );
     feedbackQueue.current = feedbackQueue.current.then(send);
@@ -156,14 +205,16 @@ export default function App() {
     (id: ProfileId, t: Title | SavedTitle, body: { signal?: Signal | null; event?: ImplicitEvent }) => {
       const payload = { profile: id, key: titleKey(t), item: toSaved(t), ...body };
       // Los eventos implícitos no necesitan orden: salen al momento.
-      if (body.event) fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), keepalive: true }).catch(() => {});
+      if (body.event) fetch("/api/feedback", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(payload), keepalive: true }).catch(() => {});
       else postFeedback(payload);
     },
     [postFeedback],
   );
 
+  const currentMeta = registry?.profiles.find((p) => p.id === nav.profile) ?? null;
+
   const api = useMemo<ProfileApi | null>(() => {
-    if (!profile) return null;
+    if (!profile || !currentMeta || currentMeta.id !== profile.id) return null;
     const id = profile.id;
     const fb = profile.data.feedback ?? {};
     const track = (t: Title | SavedTitle, event: ImplicitEvent) => sendFeedback(id, t, { event });
@@ -171,6 +222,8 @@ export default function App() {
     const listed = new Set(profile.data.watchlist.map(titleKey));
     return {
       id: profile.id,
+      meta: currentMeta,
+      plural: currentMeta.kind === "couple",
       data: profile.data,
       inList: (t) => listed.has(titleKey(t)),
       isSeen: (t) => seen.has(titleKey(t)),
@@ -213,7 +266,7 @@ export default function App() {
       },
       track,
     };
-  }, [profile, update, sendFeedback]);
+  }, [profile, currentMeta, update, sendFeedback]);
 
   const setFilters = (f: Filters) => {
     setFiltersState(f);
@@ -221,13 +274,37 @@ export default function App() {
   };
 
   // ---------- Acciones ----------
-  const pickProfile = (id: ProfileId) => {
+  const enter = (id: ProfileId) => {
     try {
       localStorage.setItem(LAST_PROFILE, id);
     } catch {}
     setLastUsed(id);
     setRedoQuiz(false);
+    setActiveToken(tokenOf(id));
     push({ profile: id, tab: "foryou", detail: null });
+  };
+
+  // Con token en esta tele se entra directamente; si no, se pide el PIN (o se crea, en perfiles antiguos sin PIN).
+  const pickProfile = (p: PublicProfile) => (tokenOf(p.id) ? enter(p.id) : setPinFor(p));
+
+  const login = async (p: PublicProfile, pin: string): Promise<string | null> => {
+    try {
+      const { token } = await sendJSON<{ token: string }>(`/api/profiles/${p.id}/session`, "POST", { pin });
+      rememberToken(p.id, token);
+      setPinFor(null);
+      if (!p.hasPin) await loadRegistry();
+      enter(p.id);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : "No se ha podido entrar";
+    }
+  };
+
+  const forgetDevice = () => {
+    if (!nav.profile) return;
+    rememberToken(nav.profile, null);
+    setActiveToken(null);
+    replace(HOME);
   };
 
   // Al terminar el cuestionario se guarda al momento: las recomendaciones las calcula el servidor con estos gustos.
@@ -243,6 +320,7 @@ export default function App() {
     // Las valoraciones del onboarding van al motor en un único lote para que entrene desde el primer momento.
     const batch = Object.entries(ratings).map(([key, r]) => ({ key, signal: r.signal }));
     if (batch.length) postFeedback({ profile: profile.id, batch });
+    loadRegistry();
     setFiltersState(f);
     setRedoQuiz(false);
     replace({ ...nav, tab: "foryou", detail: null });
@@ -279,9 +357,42 @@ export default function App() {
   }, [api?.id, redoQuiz, Boolean(api?.data.prefs)]);
 
   // ---------- Render ----------
-  if (!nav.profile) return <ProfilePicker lastUsed={lastUsed} onPick={pickProfile} />;
+  if (creating && registry) {
+    return (
+      <ProfileCreator
+        profiles={registry.profiles}
+        emojis={registry.emojis}
+        colors={registry.colors}
+        onCancel={() => setCreating(false)}
+        onCreated={(p, token) => {
+          rememberToken(p.id, token);
+          setRegistry({ ...registry, profiles: [...registry.profiles, p] });
+          setCreating(false);
+          enter(p.id);
+        }}
+      />
+    );
+  }
 
-  const current = PROFILES.find((p) => p.id === nav.profile)!;
+  if (!nav.profile || !currentMeta) {
+    return (
+      <>
+        <ProfilePicker profiles={registry?.profiles ?? null} focusId={lastUsed ?? registry?.suggested ?? null} onPick={pickProfile} onCreate={() => setCreating(true)} error={registryError} />
+        {pinFor && (
+          <PinPad
+            key={pinFor.id}
+            title={pinFor.hasPin ? `PIN de ${pinFor.name}` : `${pinFor.name}: crea tu PIN`}
+            hint={pinFor.hasPin ? "Solo se pide la primera vez en esta tele." : "Este perfil aún no tiene PIN. Elige 4 cifras para protegerlo."}
+            confirm={!pinFor.hasPin}
+            onSubmit={(pin) => login(pinFor, pin)}
+            onCancel={() => setPinFor(null)}
+          />
+        )}
+      </>
+    );
+  }
+
+  const current = currentMeta;
   const error = metaError ?? profileError;
 
   if (api && meta && (!api.data.prefs || redoQuiz)) {
@@ -290,7 +401,7 @@ export default function App() {
         key={`${api.id}:${redoQuiz}`}
         profileId={api.id}
         name={current.name}
-        pareja={api.id === "pareja"}
+        pareja={api.plural}
         meta={meta}
         initial={api.data.prefs}
         initialPlatforms={api.data.platforms}
@@ -316,9 +427,7 @@ export default function App() {
           ))}
         </nav>
         <button className="who" onClick={() => push(HOME)} title="Cambiar de perfil">
-          <span className="avatar avatar--small" style={{ background: current.color }}>
-            {current.initials}
-          </span>
+          <Avatar p={current} small />
           <span className="who-name">{current.name}</span>
         </button>
       </header>
@@ -332,9 +441,10 @@ export default function App() {
             {nav.tab === "foryou" && <ForYouView onOpen={openDetail} onRedo={() => setRedoQuiz(true)} />}
             {nav.tab === "search" && <SearchView filters={filters} onFilters={setFilters} meta={meta} onOpen={openDetail} />}
             {nav.tab === "surprise" && <SurpriseView filters={filters} onFilters={setFilters} meta={meta} />}
+            {nav.tab === "community" && <CommunityView onOpen={openDetail} />}
             {nav.tab === "list" && <ListView onOpen={openDetail} />}
             {nav.tab === "seen" && <SeenView meta={meta} onOpen={openDetail} />}
-            {nav.tab === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} />}
+            {nav.tab === "settings" && <SettingsView meta={meta} onRedo={() => setRedoQuiz(true)} onForget={forgetDevice} />}
           </main>
           {nav.detail && <DetailModal key={`${nav.detail.type}:${nav.detail.id}`} target={nav.detail} onClose={back} />}
         </ProfileContext.Provider>

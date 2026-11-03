@@ -20,6 +20,68 @@ export const GENRE_GROUPS = [
 
 export type GenreGroupId = (typeof GENRE_GROUPS)[number]["id"];
 
+// «Forma de ser» frente a la pantalla: cada respuesta empuja aspectos que detectan las críticas (src/lib/reviews).
+export const PERSONA_QUESTIONS = [
+  {
+    id: "mind",
+    q: "Cuando te pones algo, ¿qué buscas?",
+    options: [
+      { v: 1, label: "Que me haga pensar", emoji: "🧠", tags: { cerebral: 1, giros: 0.4 } },
+      { v: -1, label: "Desconectar", emoji: "🛋️", tags: { reconfortante: 0.8, divertida: 0.6, cerebral: -0.4 } },
+      { v: 0, label: "Depende del día", emoji: "🤷", tags: {} },
+    ],
+  },
+  {
+    id: "dark",
+    q: "¿Historias oscuras y duras?",
+    options: [
+      { v: 1, label: "Cuanto más crudas, mejor", emoji: "🌑", tags: { oscura: 1, violenta: 0.5, realista: 0.4 } },
+      { v: -1, label: "Prefiero algo luminoso", emoji: "☀️", tags: { oscura: -0.8, violenta: -0.8, reconfortante: 0.5 } },
+      { v: 0, label: "Me da igual", emoji: "🤷", tags: {} },
+    ],
+  },
+  {
+    id: "pace",
+    q: "¿Paciencia con los ritmos pausados?",
+    options: [
+      { v: 1, label: "Me encantan las historias a fuego lento", emoji: "🐢", tags: { lenta: 0.8, atmosferica: 0.6 } },
+      { v: -1, label: "Que no pare", emoji: "⚡", tags: { lenta: -1, tensa: 0.7, adictiva: 0.5 } },
+      { v: 0, label: "Según cómo esté contada", emoji: "🤷", tags: {} },
+    ],
+  },
+  {
+    id: "feel",
+    q: "¿Te gusta que una historia te emocione?",
+    options: [
+      { v: 1, label: "Sí, aunque acabe llorando", emoji: "😭", tags: { emotiva: 1 } },
+      { v: -1, label: "Prefiero no sufrir", emoji: "🙅", tags: { emotiva: -0.6, divertida: 0.4 } },
+      { v: 0, label: "Con moderación", emoji: "🤷", tags: {} },
+    ],
+  },
+  {
+    id: "craft",
+    q: "¿Qué te importa más?",
+    options: [
+      { v: 1, label: "El guion y los diálogos", emoji: "✍️", tags: { guion: 1, actuaciones: 0.5 } },
+      { v: 2, label: "Que entre por los ojos", emoji: "🎨", tags: { visual: 1, epica: 0.6 } },
+      { v: 3, label: "Los giros y sorpresas", emoji: "🌀", tags: { giros: 1, tensa: 0.4 } },
+      { v: 0, label: "Un poco de todo", emoji: "🤷", tags: {} },
+    ],
+  },
+] as const;
+
+export type PersonaId = (typeof PERSONA_QUESTIONS)[number]["id"];
+
+/** Respuestas → pesos de aspecto (`tensa` → 0.7). */
+export function personaTags(persona: Prefs["persona"]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const q of PERSONA_QUESTIONS) {
+    const opt = (q.options as readonly { v: number; tags: Record<string, number> }[]).find((o) => o.v === persona?.[q.id]);
+    for (const [t, w] of Object.entries(opt?.tags ?? {})) out[t] = (out[t] ?? 0) + w;
+  }
+  return out;
+}
+
 export interface Prefs {
   types: MediaType[];
   likes: GenreGroupId[];
@@ -28,6 +90,8 @@ export interface Prefs {
   era: "new" | "modern" | "any";
   quality: "top" | "good" | "any";
   discovery: "popular" | "hidden" | "mix";
+  /** Forma de ser (PERSONA_QUESTIONS): id de pregunta → valor de la opción elegida. */
+  persona?: Partial<Record<PersonaId, number>>;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -72,5 +136,16 @@ export function sanitizePrefs(raw: unknown): Prefs | null {
     era: pick(r.era, ["new", "modern", "any"], "any"),
     quality: pick(r.quality, ["top", "good", "any"], "good"),
     discovery: pick(r.discovery, ["popular", "hidden", "mix"], "mix"),
+    persona: sanitizePersona(r.persona),
   };
+}
+
+function sanitizePersona(raw: unknown): Prefs["persona"] {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Prefs["persona"] = {};
+  for (const q of PERSONA_QUESTIONS) {
+    const v = (raw as Record<string, unknown>)[q.id];
+    if (q.options.some((o) => o.v === v)) out[q.id] = v as number;
+  }
+  return out;
 }

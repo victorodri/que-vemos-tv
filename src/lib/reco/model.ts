@@ -1,7 +1,7 @@
 import "server-only";
-import { PROFILES } from "@/config/profiles";
+import { listProfiles } from "../profiles";
 import type { after as afterFn } from "next/server";
-import { GENRE_GROUPS, type Prefs } from "../prefs";
+import { GENRE_GROUPS, personaTags, type Prefs } from "../prefs";
 import { getProfile, kvGet, kvSet, listPush, listRange } from "../store";
 import type { ProfileData } from "../types";
 import { getManyFeatures, normalize } from "./features";
@@ -13,7 +13,7 @@ import type { ImplicitEvent, RecoEvent, Signal, TasteModel } from "./types";
 // y lo reciente que es (olvido exponencial). El cuestionario actúa como «prior» que pierde
 // importancia a medida que hay señales reales.
 
-const MODEL_VERSION = 5;
+const MODEL_VERSION = 6;
 export const MAX_EVENTS = 2000;
 
 /** Peso de cada señal en el aprendizaje. */
@@ -91,6 +91,10 @@ export function priorVector(p: Prefs | null): Vec {
   } else if (p.era === "modern") {
     for (let d = 2000; d <= dec; d += 10) v[`d:${d}`] = 0.35;
   }
+  // Forma de ser → aspectos que destacan las críticas. Lo «pesado» y «sobrevalorado» resta a todos.
+  for (const [tag, w] of Object.entries(personaTags(p.persona))) v[`a:${tag}`] = (v[`a:${tag}`] ?? 0) + 0.8 * w;
+  v["a:aburrida"] = (v["a:aburrida"] ?? 0) - 0.6;
+  v["a:sobrevalorada"] = (v["a:sobrevalorada"] ?? 0) - 0.3;
   if (p.runtime === "short") v["r:short"] = 0.6;
   else if (p.runtime === "normal") {
     v["r:short"] = 0.2;
@@ -269,17 +273,22 @@ function mergeDist(ds: (Record<string, number> | undefined)[]): Record<string, n
   return out;
 }
 
-/** Si cambia un miembro, la pareja también debe reentrenarse (después de responder). */
+/** Si cambia un miembro, las parejas de las que forma parte también se reentrenan (después de responder). */
 export function coupleRetrainAfter(profileId: string, after: typeof afterFn) {
-  if (profileId === "pareja") return;
-  after(() => retrain("pareja").then(() => undefined, (e) => console.error("retrain pareja", e)));
+  after(async () => {
+    const couples = (await listProfiles()).filter((p) => p.kind === "couple" && p.members.includes(profileId));
+    for (const c of couples) await retrain(c.id).catch((e) => console.error("retrain pareja", c.id, e));
+  });
 }
 
-/** Miembros del perfil pareja (los demás perfiles). */
-export const coupleMembers = (id: string) => (id === "pareja" ? PROFILES.filter((p) => p.id !== "pareja").map((p) => p.id) : []);
+/** Miembros enlazados de un perfil pareja (vacío si es individual o no tiene dos enlazados). */
+export async function coupleMembers(id: string): Promise<string[]> {
+  const meta = (await listProfiles()).find((p) => p.id === id);
+  return meta?.kind === "couple" && meta.members.length >= 2 ? meta.members : [];
+}
 
 export async function retrain(profileId: string): Promise<TasteModel> {
-  const members = coupleMembers(profileId);
+  const members = await coupleMembers(profileId);
   return members.length ? trainCouple(profileId, members) : trainTaste(profileId);
 }
 

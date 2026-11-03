@@ -9,11 +9,11 @@ import { Rating, SIGNAL_BADGE } from "./TitleCard";
 type Kind = "movie" | "tv" | "all";
 
 /** Tarjeta compacta de póster para las estanterías horizontales. */
-function PosterCard({ item, onOpen }: { item: RecoItem; onOpen: () => void }) {
+export function PosterCard({ item, onOpen, autofocus }: { item: RecoItem; onOpen: () => void; autofocus?: boolean }) {
   const profile = useProfile();
   const rated = profile.feedbackOf(item);
   return (
-    <button className="poster-card" onClick={onOpen} aria-label={`${item.title}. ${item.reason}`}>
+    <button className="poster-card" onClick={onOpen} aria-label={`${item.title}. ${item.reason}`} data-autofocus={autofocus || undefined}>
       <div className="poster-card-img">
         {item.poster ? <img src={item.poster} alt="" loading="lazy" /> : <span className="poster-fallback">{item.title}</span>}
         <span className="poster-card-badges">
@@ -40,7 +40,7 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const pareja = profile.id === "pareja";
+  const pareja = profile.plural;
 
   // Lo que el servidor usa para recomendar. Al cambiar (valorar, añadir a la lista…) se recalcula con retardo,
   // para no pedir estanterías nuevas a cada pulsación.

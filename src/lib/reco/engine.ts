@@ -1,10 +1,13 @@
 import "server-only";
-import { PROFILES } from "@/config/profiles";
+import { after } from "next/server";
+import { listProfiles } from "../profiles";
+import { warmReviews } from "../reviews";
 import { hashOf } from "../client";
 import { GENRE_GROUPS, type Prefs } from "../prefs";
 import { getProfile, kvGet, kvSet } from "../store";
-import { getProviders, tmdb, toTitle } from "../tmdb";
+import { getProviders, IMG, tmdb, toTitle } from "../tmdb";
 import type { MediaType, Title } from "../types";
+import { communityPicks, type CommunityPick } from "./community";
 import { getManyFeatures, normalize, shallowFeatures } from "./features";
 import { affinity, coupleMembers, cosine, dot, getTaste, type Vec } from "./model";
 import type { ItemFeatures, RecoItem, Shelf, TasteModel } from "./types";
@@ -14,7 +17,7 @@ import type { ItemFeatures, RecoItem, Shelf, TasteModel } from "./types";
 //   2. Ranking: criba barata con rasgos ligeros → rasgos completos (con caché) para los mejores →
 //      puntuación final (afinidad + calidad + fuente + novedad) → diversificación MMR → explicación.
 
-type Source = "because" | "discover" | "keyword" | "trending" | "gems" | "people" | "shared";
+type Source = "because" | "discover" | "keyword" | "trending" | "gems" | "people" | "shared" | "community";
 
 interface Candidate {
   key: string;
@@ -42,8 +45,10 @@ export const TUNING = {
   stage1Keep: 70,
   wAffinity: 0.6,
   wQuality: 0.25,
+  /** Peso de la nota de la crítica (RT, Metacritic, blogs, Reddit…) dentro de la calidad, cuando la hay. */
+  wCritic: 0.35,
   wPopFit: 0.05,
-  sourcePrior: { because: 0.12, people: 0.08, keyword: 0.06, discover: 0.04, trending: 0.05, gems: 0.03, shared: 0.06 } as Record<Source, number>,
+  sourcePrior: { because: 0.12, people: 0.08, keyword: 0.06, discover: 0.04, trending: 0.05, gems: 0.03, shared: 0.06, community: 0.1 } as Record<Source, number>,
   /** Pareja: recuperar también por cruces de géneros favoritos de cada uno (Acción Y Romance…). */
   sharedRetrieval: true,
   /** Penalización (o premio) por que el mismo título venga de varias fuentes. */
@@ -282,7 +287,7 @@ async function gatherCandidates(types: MediaType[], taste: TasteModel, prefs: Pr
 function dedupe(cands: Candidate[]): Map<string, Candidate & { sources: Set<Source> }> {
   const m = new Map<string, Candidate & { sources: Set<Source> }>();
   // Prioridad de la fuente que se queda como principal (para la explicación).
-  const order: Source[] = ["because", "people", "shared", "keyword", "gems", "discover", "trending"];
+  const order: Source[] = ["because", "community", "people", "shared", "keyword", "gems", "discover", "trending"];
   for (const c of cands) {
     const prev = m.get(c.key);
     if (!prev) m.set(c.key, { ...c, sources: new Set([c.source]) });
@@ -385,7 +390,9 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
     const aff = aff_(feat?.f ?? c.shallow);
     // La pareja no aplica el umbral: su vector mezcla dos gustos y descartaría casi todo.
     if (!coldStart && !group && aff < TUNING.minAffinity) return;
-    const q = bayesQuality(c.raw.vote_average, c.raw.vote_count, releaseDate(c.raw));
+    // Calidad = nota bayesiana de TMDB mezclada con la de la crítica (agregadores, blogs, Reddit) si se conoce.
+    const qT = bayesQuality(c.raw.vote_average, c.raw.vote_count, releaseDate(c.raw));
+    const q = feat?.critic != null ? (1 - TUNING.wCritic) * qT + TUNING.wCritic * feat.critic : qT;
     // Las series no tienen género «Romance»: si se evita, se mira en sus temas.
     const romance = avoidRomance && c.type === "tv" && feat ? romanceHints(feat) : 0;
     if (romance >= TUNING.romanceExclude) return;
@@ -470,10 +477,45 @@ export function mmr<T extends { score: number; feat: ItemFeatures | null; shallo
  * Recomendación «pura»: dado un modelo de gustos, devuelve el ranking completo (ya filtrado y diversificable).
  * No lee ni escribe perfiles; la usan getShelves y la evaluación offline (scripts/eval-reco.ts).
  */
-export async function recommend(taste: TasteModel, prefs: Prefs | null, platforms: number[], types: MediaType[], members: TasteModel[] = []) {
+export async function recommend(taste: TasteModel, prefs: Prefs | null, platforms: number[], types: MediaType[], members: TasteModel[] = [], extra: Candidate[] = []) {
   const cands = await gatherCandidates(types, taste, prefs, platforms, members);
-  return rank(cands, taste, prefs, platforms, members);
+  return rank([...extra, ...cands], taste, prefs, platforms, members);
 }
+
+/** Lo que les encantó a perfiles parecidos, como candidatos (con los datos del título desde la caché de rasgos). */
+async function communityCandidates(picks: CommunityPick[], types: MediaType[]): Promise<Candidate[]> {
+  const feats = await getManyFeatures(picks.map((p) => p.key));
+  const strip = (url: string | null) => (url ? url.replace(/^.*\/t\/p\/w\d+/, "") : null);
+  return picks.flatMap((p) => {
+    const f = feats.get(p.key);
+    if (!f || !types.includes(f.type)) return [];
+    const date = f.year ? `${f.year}-06-01` : undefined;
+    const lang = Object.keys(f.f).find((k) => k.startsWith("l:"))?.slice(2);
+    const raw = {
+      id: f.id,
+      title: f.title,
+      name: f.title,
+      overview: f.overview,
+      vote_average: f.rating ?? 0,
+      vote_count: f.voteCount,
+      popularity: f.popularity,
+      genre_ids: f.genreIds,
+      original_language: lang,
+      release_date: date,
+      first_air_date: date,
+      poster_path: strip(f.poster),
+      backdrop_path: strip(f.backdrop),
+    };
+    return [{ key: p.key, type: f.type, raw, source: "community" as Source, via: p.owner, shallow: normalize(shallowFeatures(raw, f.type)) }];
+  });
+}
+void IMG;
+
+let communityById = new Map<string, CommunityPick>();
+
+// Nombres de los perfiles para las explicaciones («Porque a Rafa le gustó…»): se refrescan en cada getShelves.
+let profileNames = new Map<string, string>();
+const nameOf = (id: string | undefined) => (id ? profileNames.get(id) : undefined);
 
 export type { Ranked, Source };
 
@@ -483,7 +525,7 @@ const LANG_NAMES: Record<string, string> = { es: "español", ko: "coreano", ja: 
 
 function becauseText(anchor: string, taste: TasteModel, plural: boolean, title: string, ownerOverride?: string) {
   const owner = ownerOverride ?? taste.anchorOwner?.[anchor];
-  const name = owner ? PROFILES.find((p) => p.id === owner)?.name : null;
+  const name = nameOf(owner) ?? null;
   return name ? `Porque a ${name} le gustó «${title}»` : `Porque ${plural ? "os" : "te"} gustó «${title}»`;
 }
 
@@ -505,7 +547,11 @@ function explain(
   // («Porque te gusta: Drama» salía en media lista; Herlocker, Konstan y Riedl, «Explaining Collaborative
   // Filtering Recommendations», 2000).
   const seenBy = likedOwner.get(r.key);
-  if (seenBy) return `${PROFILES.find((p) => p.id === seenBy)?.name ?? "Uno de los dos"} ya la vio y le gustó`;
+  if (seenBy) return `${nameOf(seenBy) ?? "Uno de los dos"} ya la vio y le gustó`;
+  if (r.source === "community" && r.via) {
+    const pick = communityById.get(r.key);
+    return `A ${nameOf(r.via) ?? "otro perfil"} le ${pick?.signal === "love" ? "encantó" : "gustó"}`;
+  }
   if (r.feat && r.source !== "trending") {
     let best: ItemFeatures | null = null;
     let bestSim = TUNING.itemExplainMin;
@@ -535,11 +581,13 @@ function explain(
   if (r.source === "trending") return label ? `Tendencia esta semana · ${label}` : "Tendencia esta semana en España";
   if (bestK.startsWith("c:") && label) return `De ${label}`;
   if (bestK.startsWith("p:") && label) return `Con ${label}`;
+  if (bestK.startsWith("a:") && label) return `La crítica destaca: ${label.toLowerCase()}`;
   if (bestK.startsWith("k:") && label) return `Porque ${te} interesa: ${label}`;
   if (bestK.startsWith("g:") && label) return `Porque ${te} gusta: ${label}`;
   if (bestK.startsWith("l:")) return `Cine en ${LANG_NAMES[bestK.slice(2)] ?? bestK.slice(2)}`;
   if (bestK.startsWith("d:")) return `De los ${bestK.slice(2)}`;
-  return r.quality > 0.7 ? "Muy bien valorada" : "Encaja con vuestros gustos";
+  if (r.feat?.critic != null && r.feat.critic >= 0.8) return "Aclamada por la crítica";
+  return r.quality > 0.7 ? "Muy bien valorada" : plural ? "Encaja con vuestros gustos" : "Encaja con tus gustos";
 }
 
 function toItem(r: Ranked, reason: string): RecoItem {
@@ -555,13 +603,19 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const taste = await getTaste(profileId);
   const types: MediaType[] = type === "all" ? (profile.prefs?.types ?? ["movie", "tv"]) : [type];
   // La clave depende del contenido del modelo (no de cuándo se calculó): reentrenar sin cambios no invalida.
-  const cacheKey = `shelves:v6:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
+  // Lo que gusta a los perfiles parecidos también cambia las estanterías (aunque este perfil no haya hecho nada).
+  const picks = await communityPicks(profileId, taste).catch(() => [] as CommunityPick[]);
+  const cacheKey = `shelves:v7:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms, picks.map((p) => p.key + p.owner)])}`;
   const cached = await kvGet<Shelf[]>(cacheKey).catch(() => null);
   if (cached) return cached;
 
-  const plural = profileId === "pareja";
-  const memberTastes = await Promise.all(coupleMembers(profileId).map((m) => getTaste(m)));
-  const ranked0 = await recommend(taste, profile.prefs, profile.platforms, types, memberTastes);
+  const metas = await listProfiles();
+  profileNames = new Map(metas.map((p) => [p.id, p.name]));
+  const plural = metas.find((p) => p.id === profileId)?.kind === "couple";
+  const memberIds = await coupleMembers(profileId);
+  const memberTastes = await Promise.all(memberIds.map((m) => getTaste(m)));
+  communityById = new Map(picks.map((p) => [p.key, p]));
+  const ranked0 = await recommend(taste, profile.prefs, profile.platforms, types, memberTastes, await communityCandidates(picks, types));
 
   const anchorFeats = await getManyFeatures(taste.anchors);
   const anchorTitles = new Map([...anchorFeats].map(([k, f]) => [k, f.title]));
@@ -571,7 +625,6 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
     Object.entries(p.feedback)
       .filter(([, fb]) => fb.s === "love" || fb.s === "like")
       .map(([k]) => k);
-  const memberIds = coupleMembers(profileId);
   const memberProfiles = await Promise.all(memberIds.map((m) => getProfile(m)));
   const own = new Set(positives(profile));
   memberProfiles.forEach((p, i) => positives(p).forEach((k) => !own.has(k) && !likedOwner.has(k) && likedOwner.set(k, memberIds[i])));
@@ -618,6 +671,15 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const top = mmr(take(ranked, 60), 20, TUNING.mmrLambda, calTarget);
   shelves.push({ id: "top", title: plural ? "Lo mejor para vosotros" : "Lo mejor para ti", items: top.map((r) => toItem(r, reason(r))) });
   top.slice(0, 8).forEach((r) => used.add(r.key));
+
+  // Red de Qué Vemos: lo que les encantó a los perfiles más parecidos.
+  // Puede repetir algo de la lista principal: saber que a alguien parecido le encantó también es información.
+  const fromCommunity = mmr(
+    ranked.filter((r) => r.sources.has("community")).map((r) => (r.source === "community" ? r : { ...r, source: "community" as Source, via: communityById.get(r.key)?.owner })),
+    15,
+  );
+  if (fromCommunity.length >= 3)
+    shelves.push({ id: "community", title: plural ? "A perfiles como el vuestro les encantó" : "A perfiles como el tuyo les encantó", items: fromCommunity.map((r) => toItem(r, reason(r))) });
   // Descubrimientos y tendencias no repiten nada de la lista principal (antes compartían 3-4 títulos).
   const inTop = new Set(top.map((r) => r.key));
 
@@ -660,6 +722,13 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   if (trend.length >= 4) shelves.push({ id: "trending", title: "Tendencias en España para ti", items: trend.map((r) => toItem(r, "Tendencia esta semana")) });
 
   await kvSet(cacheKey, shelves, SHELVES_TTL).catch(() => {});
+  // Las críticas de lo recomendado (y de lo que le gustó) se calculan después de responder, para la próxima vez.
+  const toWarm = [...taste.anchors.slice(0, 6), ...shelves.flatMap((sh) => sh.items.slice(0, 6).map((i) => `${i.type}:${i.id}`))];
+  try {
+    after(() => warmReviews(toWarm, 14).then(() => undefined, (e) => console.error("warmReviews", e)));
+  } catch {
+    // Fuera de una petición (scripts, evaluación) no hay after(): se omite.
+  }
   return shelves;
 }
 

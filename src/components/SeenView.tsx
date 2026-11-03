@@ -21,7 +21,7 @@ function seenLabel(t: number | null) {
 /** Listado de lo marcado como visto: del más reciente al más antiguo, por meses, con filtros de tipo y género. */
 export function SeenView({ meta, onOpen }: { meta: Meta; onOpen: (t: SeenItem) => void }) {
   const profile = useProfile();
-  const pareja = profile.id === "pareja";
+  const pareja = profile.plural;
   const [items, setItems] = useState<SeenItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);

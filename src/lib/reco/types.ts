@@ -9,7 +9,9 @@
 //     de TMDB), descubrimiento por rasgos favoritos, tendencias en España, joyas ocultas y obras de sus personas favoritas.
 //  4. Ranking = afinidad con el vector + calidad bayesiana + novedad/descubrimiento, con diversificación (MMR)
 //     y una razón legible para cada recomendación.
-//  5. El perfil «pareja» mezcla su propio vector con los de Víctor y Alba buscando lo que gusta a ambos.
+//  5. Un perfil en pareja (src/lib/profiles.ts) mezcla su propio vector con los de sus dos miembros enlazados.
+//  6. Comunidad (community.ts): lo que les encantó a los perfiles más parecidos entra como candidato.
+//  7. Críticas (src/lib/reviews): aspectos («tensa», «giros»…) como rasgos `a:` y nota de la crítica en la calidad.
 
 import type { MediaType, Title } from "../types";
 
@@ -38,6 +40,7 @@ export interface RecoEvent {
  * Claves de rasgo:
  *   g:<genreId>  k:<keywordId>  p:<personId> (reparto principal)  c:<personId> (dirección/creación)
  *   d:<década p.ej. 2010>  l:<idioma original>  t:<movie|tv>  r:<short|medium|long>
+ *   a:<aspecto que destacan las críticas: tensa, giros, oscura, lenta…> (src/lib/reviews)
  */
 export interface ItemFeatures {
   key: string;
@@ -59,6 +62,8 @@ export interface ItemFeatures {
   /** Nombres legibles de algunos rasgos, para explicar recomendaciones ("k:9882" → "espacio"). */
   labels: Record<string, string>;
   fetchedAt: number;
+  /** Nota de la crítica 0..1 (Rotten Tomatoes, Metacritic, blogs, Reddit…), si ya se ha calculado. */
+  critic?: number | null;
 }
 
 /** Vector de gustos aprendido de un perfil. */
@@ -83,7 +88,7 @@ export interface TasteModel {
   version: number;
 }
 
-export type ShelfId = "top" | "because" | "discover" | "trending" | "gems" | "people" | "together";
+export type ShelfId = "top" | "because" | "discover" | "trending" | "gems" | "people" | "together" | "community";
 
 /** Un título recomendado, con su explicación. */
 export interface RecoItem extends Title {

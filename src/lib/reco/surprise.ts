@@ -8,6 +8,7 @@ import { bayesQuality } from "./engine";
 import { getManyFeatures, normalize, shallowFeatures } from "./features";
 import { affinity, getTaste } from "./model";
 import type { ImplicitEvent, Signal, TasteModel } from "./types";
+import { getMeta } from "../profiles";
 
 // «Sorpréndeme» infinito.
 //
@@ -230,6 +231,7 @@ function arReason(c: Cand, plural: boolean, anchorTitles: Map<string, string>): 
 }
 
 export async function surpriseBatch(profileId: string, f: Filters, n: number, clientSkip: string[]): Promise<{ items: SurpriseItem[]; reason?: "empty" }> {
+  const plural = (await getMeta(profileId))?.kind === "couple";
   const [profile, taste, bandit, shown, streak] = await Promise.all([
     getProfile(profileId),
     getTaste(profileId),
@@ -296,7 +298,7 @@ export async function surpriseBatch(profileId: string, f: Filters, n: number, cl
       if (!d.providers?.length) continue;
       if (f.onlyMine && profile.platforms.length && !d.providers.some((p) => profile.platforms.includes(p.id))) continue;
       if (f.maxRuntime && d.runtime && d.runtime > f.maxRuntime) continue;
-      out.push({ ...d, arm: c.arm, reason: arReason(c, profileId === "pareja", anchorTitles) });
+      out.push({ ...d, arm: c.arm, reason: arReason(c, plural, anchorTitles) });
     }
   }
 

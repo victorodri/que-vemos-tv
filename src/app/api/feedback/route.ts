@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
-import { isProfileId } from "@/config/profiles";
 import { errorResponse } from "@/lib/api";
+import { authorize } from "@/lib/profiles";
+import { warmReviews } from "@/lib/reviews";
 import { IMPLICIT, KEY_RE, SIGNALS } from "@/lib/reco/feedback";
 import { coupleRetrainAfter, logEvent, retrain } from "@/lib/reco/model";
 import { learnFromReaction } from "@/lib/reco/surprise";
@@ -23,7 +24,9 @@ export async function POST(req: Request) {
       batch?: { key: string; signal: Signal | null }[];
     };
     const { profile, key } = body;
-    if (!profile || !isProfileId(profile)) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
+    const auth = await authorize(req, profile ?? null);
+    if (auth instanceof NextResponse) return auth;
+    if (!profile) return NextResponse.json({ error: "Perfil desconocido" }, { status: 404 });
 
     if (Array.isArray(body.batch)) {
       const items = body.batch.filter((b) => KEY_RE.test(b?.key) && (b.signal === null || SIGNALS.includes(b.signal))).slice(0, 200);
@@ -65,6 +68,8 @@ export async function POST(req: Request) {
     await logEvent(profile, { k: key, e: body.signal ?? "clear", t });
     const sig = body.signal ?? "clear";
     after(() => learnFromReaction(profile, key, sig).catch(() => {}));
+    // Lo valorado entra en el modelo con los aspectos de su crítica: se calculan si aún no estaban.
+    after(() => warmReviews([key], 1).then(() => undefined, () => undefined));
     await retrain(profile);
     coupleRetrainAfter(profile, after);
     return NextResponse.json({ ok: true, feedback });

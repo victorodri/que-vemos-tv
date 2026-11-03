@@ -6,6 +6,7 @@ import type { MediaType, SavedTitle, Title, TitleDetail } from "@/lib/types";
 import { focusFirst } from "./spatialNav";
 import { useProfile } from "./profileContext";
 import { ProviderList } from "./Providers";
+import { ReviewsPanel } from "./ReviewsPanel";
 import { Rating } from "./TitleCard";
 
 /** Ficha grande de un título: fondo, póster, datos, plataformas y botones. */
@@ -77,7 +78,7 @@ export function ProfileActions({ title, onSeen }: { title: Title | SavedTitle; o
   const profile = useProfile();
   const inList = profile.inList(title);
   const seen = profile.isSeen(title);
-  const pareja = profile.id === "pareja";
+  const pareja = profile.plural;
   return (
     <>
       <button className="btn" onClick={() => profile.toggleList(title)}>
@@ -116,14 +117,17 @@ export function DetailModal({ target, onClose }: { target: { type: MediaType; id
   return (
     <div className="modal" data-nav-modal role="dialog" aria-modal="true">
       {shown ? (
-        <TitleFeature title={shown}>
-          <button className="btn btn--primary" data-autofocus onClick={onClose}>
-            ← Volver
-          </button>
-          <ProfileActions title={shown} />
-          <FeedbackButtons title={shown} />
-          {error && <p className="error">{error}</p>}
-        </TitleFeature>
+        <div className="modal-body">
+          <TitleFeature title={shown}>
+            <button className="btn btn--primary" data-autofocus onClick={onClose}>
+              ← Volver
+            </button>
+            <ProfileActions title={shown} />
+            <FeedbackButtons title={shown} />
+            {error && <p className="error">{error}</p>}
+          </TitleFeature>
+          <ReviewsPanel type={target.type} id={target.id} />
+        </div>
       ) : (
         <div className="modal-loading">
           {error ? <p className="error">{error}</p> : <p className="loading">Cargando…</p>}

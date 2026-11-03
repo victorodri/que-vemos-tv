@@ -1,11 +1,15 @@
 "use client";
 import { createContext, useContext } from "react";
-import type { ProfileId } from "@/config/profiles";
+import type { PublicProfile } from "@/lib/profiles";
 import type { ImplicitEvent, Signal } from "@/lib/reco/types";
 import type { Filters, ProfileData, SavedTitle, Title } from "@/lib/types";
 
 export interface ProfileApi {
-  id: ProfileId;
+  id: string;
+  /** Nombre, avatar y tipo (individual / pareja). */
+  meta: PublicProfile;
+  /** Perfil en pareja: los textos van en plural («os gustó»). */
+  plural: boolean;
   data: ProfileData;
   inList: (t: { type: Title["type"]; id: number }) => boolean;
   isSeen: (t: { type: Title["type"]; id: number }) => boolean;
