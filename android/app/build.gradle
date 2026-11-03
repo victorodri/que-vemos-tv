@@ -18,7 +18,7 @@ android {
         minSdk 22
         targetSdk 35
         versionCode buildNumber
-        versionName "1.2.${buildNumber}" // 1.2: logo y banner de QuéVer · 1.1: Atrás delegado en la web y puente QueVemosAndroid.exit()
+        versionName "1.3.${buildNumber}" // 1.3: OK abre el teclado en los campos de texto · 1.2: logo y banner de QuéVer · 1.1: Atrás delegado en la web y puente QueVemosAndroid.exit()
         buildConfigField "String", "APP_URL", "\"${appUrl}\""
     }
 

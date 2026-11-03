@@ -11,6 +11,9 @@ export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: (
   // Preferencia de esta tele (localStorage), no del perfil: se lee tras montar para no romper la hidratación.
   const [sound, setSound] = useState(true);
   useEffect(() => setSound(soundEnabled()), []);
+  // Versión del APK (va en el user agent: «QueVemosTV/1.3.5»); vacío en el navegador.
+  const [apkVersion, setApkVersion] = useState<string | null>(null);
+  useEffect(() => setApkVersion(/QueVemosTV\/([\d.]+)/.exec(navigator.userAgent)?.[1] ?? null), []);
 
   const toggle = (id: number) => profile.setPlatforms(platforms.includes(id) ? platforms.filter((p) => p !== id) : [...platforms, id]);
 
@@ -78,6 +81,7 @@ export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: (
           🔒 Cerrar sesión en esta tele
         </button>
       </div>
+      {apkVersion && <p className="hint">App de la tele: versión {apkVersion}</p>}
 
       {meta.storage === "local" && (
         <p className="hint warn">

@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.KeyEvent;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebSettings;
@@ -18,7 +19,7 @@ import android.webkit.WebViewClient;
  * Toda la app vive en la web, así que cada despliegue en Vercel llega a la tele sin reinstalar el APK.
  *
  * El mando: las flechas llegan a la web como ArrowUp/Down/Left/Right (la web gestiona el foco),
- * OK se traduce a Enter y Atrás se delega en la web (window.__queVemosBack): la web decide si cierra una ficha,
+ * OK se traduce a Enter (sobre un campo de texto, en cambio, abre el teclado en pantalla) y Atrás se delega en la web (window.__queVemosBack): la web decide si cierra una ficha,
  * vuelve a «Para ti» o, con una segunda pulsación, cierra la app llamando a QueVemosAndroid.exit().
  * Si la web no responde (página sin cargar o versión antigua), se retrocede en el historial o se cierra la app.
  */
@@ -26,6 +27,11 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private boolean offline = false;
+    // OK del mando pendiente de saber si el foco está en un campo de texto (ver handleCenter).
+    private KeyEvent centerDown = null;
+    private boolean centerAnswered = false;
+    private boolean centerUpPending = false;
+    private boolean centerIsText = false;
 
     /** Puente que ve la web como window.QueVemosAndroid. Solo expone cerrar la app. */
     public final class Bridge {
@@ -119,12 +125,64 @@ public class MainActivity extends Activity {
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) handleBack();
             return true;
         }
+        if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER && !offline) {
+            handleCenter(event);
+            return true;
+        }
         // El botón central del mando como Enter, para que «pulse» el botón enfocado en la web.
         if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER) {
-            return super.dispatchKeyEvent(new KeyEvent(event.getDownTime(), event.getEventTime(), event.getAction(),
-                    KeyEvent.KEYCODE_ENTER, event.getRepeatCount(), event.getMetaState()));
+            return super.dispatchKeyEvent(asEnter(event));
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    private static KeyEvent asEnter(KeyEvent e) {
+        return new KeyEvent(e.getDownTime(), e.getEventTime(), e.getAction(), KeyEvent.KEYCODE_ENTER, e.getRepeatCount(), e.getMetaState());
+    }
+
+    /**
+     * OK del mando. Si el foco de la web está en un campo de texto, abre el teclado en pantalla (el WebView no lo abre
+     * solo con Enter, y Enter enviaría el formulario vacío). Si no, se reenvía como Enter. Como saber qué hay enfocado
+     * es asíncrono, la pulsación se guarda hasta tener la respuesta; si el «soltar» llega antes, se envía después.
+     */
+    private void handleCenter(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            if (event.getRepeatCount() > 0 || centerDown != null) return;
+            final KeyEvent down = event;
+            centerDown = down;
+            centerAnswered = false;
+            centerUpPending = false;
+            web.evaluateJavascript(
+                    "(function(){var e=document.activeElement;if(!e)return false;var t=(e.type||'').toLowerCase();"
+                            + "return e.tagName==='TEXTAREA'||e.isContentEditable||(e.tagName==='INPUT'&&['text','search','email','url','tel','number','password',''].indexOf(t)>=0);})()",
+                    new ValueCallback<String>() {
+                        @Override
+                        public void onReceiveValue(String value) {
+                            if (centerDown != down) return;
+                            centerAnswered = true;
+                            centerIsText = "true".equals(value);
+                            if (centerIsText) showKeyboard();
+                            else web.dispatchKeyEvent(asEnter(down));
+                            if (centerUpPending) finishCenter(KeyEvent.changeAction(down, KeyEvent.ACTION_UP));
+                        }
+                    });
+        } else if (event.getAction() == KeyEvent.ACTION_UP && centerDown != null) {
+            // Si la web aún no ha respondido, se suelta cuando responda.
+            if (centerAnswered) finishCenter(event);
+            else centerUpPending = true;
+        }
+    }
+
+    private void finishCenter(KeyEvent up) {
+        if (!centerIsText) web.dispatchKeyEvent(asEnter(up));
+        centerDown = null;
+        centerUpPending = false;
+    }
+
+    private void showKeyboard() {
+        web.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(web, InputMethodManager.SHOW_FORCED);
     }
 
     /** Pregunta a la web si gestiona Atrás; si no (sin cargar, sin conexión, versión antigua), comportamiento clásico. */
