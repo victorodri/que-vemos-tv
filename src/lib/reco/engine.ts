@@ -672,7 +672,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   shelves.push({ id: "top", title: plural ? "Lo mejor para vosotros" : "Lo mejor para ti", items: top.map((r) => toItem(r, reason(r))) });
   top.slice(0, 8).forEach((r) => used.add(r.key));
 
-  // Red de Qué Vemos: lo que les encantó a los perfiles más parecidos.
+  // Red de QuéVer: lo que les encantó a los perfiles más parecidos.
   // Puede repetir algo de la lista principal: saber que a alguien parecido le encantó también es información.
   const fromCommunity = mmr(
     ranked.filter((r) => r.sources.has("community")).map((r) => (r.source === "community" ? r : { ...r, source: "community" as Source, via: communityById.get(r.key)?.owner })),

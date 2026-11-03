@@ -5,7 +5,7 @@ import type { RecoEvent } from "./reco/types";
 import { getProfile, kvGet, kvSet, listRange } from "./store";
 import { titleKey, type Title } from "./types";
 
-// Actividad de la comunidad de Qué Vemos: lo que otros perfiles han valorado bien, quieren ver o han visto.
+// Actividad de la comunidad de QuéVer: lo que otros perfiles han valorado bien, quieren ver o han visto.
 // Solo señales positivas y con su estado ACTUAL (si alguien quita un ❤️ o saca algo de su lista, desaparece).
 // De cada perfil solo se comparte nombre, emoji y color, como en /api/community. Nunca se inventa actividad.
 

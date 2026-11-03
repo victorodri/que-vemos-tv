@@ -1,7 +1,7 @@
 /* ---------- Gancho social y estrenos con tirón («Para ti» y Comunidad) ----------
    Usa las variables de :root de globals.css. Tamaños en rem (escalan con el ancho de la tele). */
 
-/* Franja «En Qué Vemos» */
+/* Franja «En QuéVer» */
 .social-title {
   display: flex;
   align-items: baseline;

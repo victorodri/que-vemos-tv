@@ -8,6 +8,7 @@ import type { PublicProfile } from "@/lib/profiles";
 import { titleKey, type Filters, type MediaType, type Meta, type ProfileData, type SavedTitle, type Title } from "@/lib/types";
 import { ForYouView } from "./ForYouView";
 import { ListView } from "./ListView";
+import { Logo } from "./Logo";
 import { CommunityView } from "./CommunityView";
 import { PinPad } from "./PinPad";
 import { ProfileCreator } from "./ProfileCreator";
@@ -552,9 +553,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar" data-nav-header>
-        <h1 className="logo">
-          Qué <span>Vemos</span>
-        </h1>
+        <Logo />
         <nav className="tabs">
           {TABS.map((t) => (
             <button key={t.id} className="tab" aria-current={nav.tab === t.id ? "page" : undefined} data-autofocus={nav.tab === t.id || undefined} onClick={() => goTab(t.id)}>

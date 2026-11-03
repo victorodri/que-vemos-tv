@@ -1,4 +1,4 @@
-/* Qué Vemos — interfaz "10 pies": se usa desde el sofá con el mando. */
+/* QuéVer — interfaz "10 pies": se usa desde el sofá con el mando. */
 :root {
   --bg: #0b0d12;
   --surface: #161a23;
@@ -83,12 +83,22 @@ input:focus {
 
 /* ---------- Logo y cabecera ---------- */
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  margin: 0;
   font-size: 1.25rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   white-space: nowrap;
 }
-.logo span {
+.logo-mark {
+  height: 1.15em;
+  width: auto;
+  color: var(--accent);
+  flex: none;
+}
+.logo-word span {
   color: var(--accent);
 }
 .logo--big {

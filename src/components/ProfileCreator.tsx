@@ -134,7 +134,7 @@ export function ProfileCreator({
       {step === "name" && (
         <>
           <h2 className="quiz-title">{kind === "couple" ? "¿Cómo se llama la pareja?" : "¿Cómo te llamas?"}</h2>
-          <p className="quiz-hint">{kind === "couple" ? "Por ejemplo: «Rafa y Lucía»." : "Es lo que verán los demás perfiles de Qué Vemos."}</p>
+          <p className="quiz-hint">{kind === "couple" ? "Por ejemplo: «Rafa y Lucía»." : "Es lo que verán los demás perfiles de QuéVer."}</p>
           <form
             className="name-form"
             onSubmit={(e) => {

@@ -55,7 +55,7 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const pareja = profile.plural;
-  // Actividad de otros perfiles: franja «En Qué Vemos» y contadores «👥» de las tarjetas.
+  // Actividad de otros perfiles: franja «En QuéVer» y contadores «👥» de las tarjetas.
   const { data: activity } = useActivity(profile.id, 24, String(reload));
 
   // Lo que el servidor usa para recomendar. Al cambiar (valorar, añadir a la lista…) se recalcula con retardo,

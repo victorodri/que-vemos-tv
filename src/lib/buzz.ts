@@ -323,7 +323,7 @@ function socialLabel(s: SocialCount): string {
     const verb = s.top === "love" ? "le encantó" : s.top === "like" ? "le gustó" : s.top === "seen" ? "la ha visto" : "la quiere ver";
     return s.top === "love" || s.top === "like" ? `A ${s.names[0]} ${verb}` : `${s.names[0]} ${verb}`;
   }
-  return `Gusta a ${s.n} perfiles de Qué Vemos`;
+  return `Gusta a ${s.n} perfiles de QuéVer`;
 }
 
 /** Frases de gancho, de la más fuerte a la más débil (como mucho 3; dónde verlo va siempre al final). */

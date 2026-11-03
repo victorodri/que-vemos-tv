@@ -70,7 +70,7 @@ export function SettingsView({ meta, onRedo, onForget }: { meta: Meta; onRedo: (
 
       <h2>Perfil</h2>
       <p className="hint">
-        {profile.meta.emoji} {profile.meta.name} · {profile.plural ? "perfil en pareja" : "perfil individual"}. Los demás perfiles de Qué Vemos solo ven tu nombre y lo que te
+        {profile.meta.emoji} {profile.meta.name} · {profile.plural ? "perfil en pareja" : "perfil individual"}. Los demás perfiles de QuéVer solo ven tu nombre y lo que te
         encantó.
       </p>
       <div>

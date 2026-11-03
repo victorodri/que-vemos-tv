@@ -15,7 +15,7 @@ interface Person {
   loved: Title[];
 }
 
-/** La red de Qué Vemos: otros perfiles, cuánto se parecen sus gustos a los tuyos y lo que les encantó. */
+/** La red de QuéVer: otros perfiles, cuánto se parecen sus gustos a los tuyos y lo que les encantó. */
 export function CommunityView({ onOpen }: { onOpen: (t: Title) => void }) {
   const profile = useProfile();
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -40,7 +40,7 @@ export function CommunityView({ onOpen }: { onOpen: (t: Title) => void }) {
       <div className="view-head">
         <div>
           <h2>Comunidad</h2>
-          <p className="hint">Lo que les encanta a otros perfiles de Qué Vemos, del más parecido a {profile.plural ? "vosotros" : "ti"} al menos.</p>
+          <p className="hint">Lo que les encanta a otros perfiles de QuéVer, del más parecido a {profile.plural ? "vosotros" : "ti"} al menos.</p>
         </div>
       </div>
       {feed.length > 0 && (

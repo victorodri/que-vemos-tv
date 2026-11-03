@@ -5,7 +5,7 @@ import type { ProfileData } from "../types";
 import { cosine } from "./model";
 import type { TasteModel } from "./types";
 
-// «Red social» de Qué Vemos: filtrado colaborativo usuario-usuario (Resnick et al., «GroupLens», 1994;
+// «Red social» de QuéVer: filtrado colaborativo usuario-usuario (Resnick et al., «GroupLens», 1994;
 // Herlocker et al., «An Algorithmic Framework for Performing Collaborative Filtering», 1999).
 // La similitud entre perfiles es el coseno de sus vectores de gustos (que ya resumen géneros, temas, personas y
 // aspectos de la crítica) más lo que coinciden en lo que les encantó; lo que les gustó mucho a los parecidos

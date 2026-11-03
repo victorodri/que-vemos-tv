@@ -4,6 +4,7 @@ import { getJSON } from "@/lib/client";
 import { DEFAULT_PREFS, GENRE_GROUPS, PERSONA_QUESTIONS, type GenreGroupId, type Prefs } from "@/lib/prefs";
 import type { FeedbackEntry, Signal } from "@/lib/reco/types";
 import { titleKey, type Meta, type Title } from "@/lib/types";
+import { Logo } from "./Logo";
 import { focusFirst, useBackHandler } from "./spatialNav";
 
 /** Valoraciones hechas en el paso de pósters: clave "movie:123" → señal + título. */
@@ -226,9 +227,7 @@ export function Questionnaire({
   if (index === -1) {
     return (
       <main className="quiz" data-nav-modal>
-        <h1 className="logo logo--big">
-          Qué <span>Vemos</span>
-        </h1>
+        <Logo big />
         <h2 className="quiz-title">¡Hola, {name}!</h2>
         <p className="quiz-hint">
           {pareja ? "Contadnos" : "Cuéntanos"} un poco qué {pareja ? "os gusta" : "te gusta"} y {pareja ? "os" : "te"} recomendaremos mejor.

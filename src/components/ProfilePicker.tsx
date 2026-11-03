@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import type { PublicProfile } from "@/lib/profiles";
+import { Logo } from "./Logo";
 import { focusFirst } from "./spatialNav";
 
 export function Avatar({ p, small }: { p: Pick<PublicProfile, "emoji" | "color" | "name">; small?: boolean }) {
@@ -36,9 +37,7 @@ export function ProfilePicker({
 
   return (
     <main className="picker">
-      <h1 className="logo logo--big">
-        Qué <span>Vemos</span>
-      </h1>
+      <Logo big />
       <p className="picker-question">¿Quién está viendo?</p>
       {error && <p className="error">{error}</p>}
       {!profiles && !error && <p className="loading">Cargando perfiles…</p>}

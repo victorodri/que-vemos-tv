@@ -6,7 +6,7 @@ import { titleKey, type Title } from "@/lib/types";
 import { Avatar } from "./ProfilePicker";
 import "./social.css";
 
-// Gancho social: lo que otros perfiles de Qué Vemos están valorando, viendo o quieren ver (datos reales de
+// Gancho social: lo que otros perfiles de QuéVer están valorando, viendo o quieren ver (datos reales de
 // /api/activity, solo señales positivas). Sin otros perfiles activos se muestra una invitación, nunca relleno.
 
 /** Contadores sociales por título para las tarjetas («👥 2»). Vacío fuera de un proveedor. */
@@ -80,15 +80,15 @@ export function ActivityCard({ item, onOpen, compact, autofocus }: { item: Activ
   );
 }
 
-/** Franja «En Qué Vemos» de «Para ti»: lo último que han hecho otros perfiles. */
+/** Franja «En QuéVer» de «Para ti»: lo último que han hecho otros perfiles. */
 export function SocialPulse({ data, onOpen, plural }: { data: ActivityResult | null; onOpen: (t: Title) => void; plural: boolean }) {
   if (!data) return null;
   // Sin actividad de otros perfiles no se muestra nada (ni invitaciones).
   if (!data.items.length) return null;
   return (
-    <section className="shelf social-pulse" aria-label="En Qué Vemos">
+    <section className="shelf social-pulse" aria-label="En QuéVer">
       <h3 className="shelf-title social-title">
-        <span className="social-dot" aria-hidden /> En Qué Vemos
+        <span className="social-dot" aria-hidden /> En QuéVer
         <span className="social-sub">{data.active === 1 ? "lo último de otro perfil" : `lo último de ${data.active} perfiles`}</span>
       </h3>
       <div className="shelf-row social-row">

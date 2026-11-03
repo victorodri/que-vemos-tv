@@ -1,4 +1,4 @@
-# Qué Vemos: notas para Claude Code
+# QuéVer (antes «Qué Vemos»): notas para Claude Code
 
 App Next.js 16 (App Router, TypeScript, CSS sin frameworks) para elegir peli o serie desde la tele con el mando. El usuario es Víctor; la app la usan Víctor y Alba. Escribe la UI y los textos en español de España.
 
@@ -67,7 +67,8 @@ Lee primero `src/lib/reco/types.ts`: describe el diseño y el contrato de las AP
 
 ## App Android TV (`android/`)
 - WebView que carga `BuildConfig.APP_URL`; no contiene lógica de la app. Los cambios de la web **no** requieren nuevo APK.
-- Solo hace falta tocar `android/` para cambiar icono, nombre, URL o el comportamiento del mando. Al hacer push con cambios ahí, GitHub Actions compila y publica una release `apk-vN` (descarga: `/apk` en la web).
+- Solo hace falta tocar `android/` para cambiar icono, nombre, URL o el comportamiento del mando.
+- Logo, favicon, iconos del launcher y banner de la tele (320×180, 480×270 y 640×360) salen de `scripts/brand.mjs` (`node scripts/brand.mjs`, en el Mac). El banner va en `<application>` y en la actividad: Fire TV lo lee de la actividad. Al hacer push con cambios ahí, GitHub Actions compila y publica una release `apk-vN` (descarga: `/apk` en la web).
 - No hay Android SDK ni Java en el Mac: no intentes compilar en local, usa el workflow (`gh workflow run android.yml`, `gh run watch`).
 - La clave de firma está en `~/.config/que-vemos-tv/` (fuera del repo) y en los secretos del repo. Nunca la subas al repo.
 

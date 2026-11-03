@@ -14,7 +14,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 /**
- * Qué Vemos para Fire TV / Android TV: una WebView a pantalla completa que carga la web de Vercel.
+ * QuéVer para Fire TV / Android TV: una WebView a pantalla completa que carga la web de Vercel.
  * Toda la app vive en la web, así que cada despliegue en Vercel llega a la tele sin reinstalar el APK.
  *
  * El mando: las flechas llegan a la web como ArrowUp/Down/Left/Right (la web gestiona el foco),
@@ -105,7 +105,7 @@ public class MainActivity extends Activity {
                 + "h1{font-size:40px;margin:0}h1 span{color:#FFC83D}p{font-size:22px;color:#A3ACBD;margin:0}"
                 + "a{font-size:24px;font-weight:bold;padding:14px 32px;border-radius:14px;background:#FFC83D;color:#1A1400;text-decoration:none}"
                 + "a:focus{outline:4px solid #fff}</style></head><body>"
-                + "<h1>Qué <span>Vemos</span></h1><p>No hay conexión a internet.</p>"
+                + "<h1>Qué<span>Ver</span></h1><p>No hay conexión a internet.</p>"
                 + "<a id='r' href='" + BuildConfig.APP_URL + "'>Reintentar</a>"
                 + "<script>document.getElementById('r').focus()</script></body></html>";
         web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);

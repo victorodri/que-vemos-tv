@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Qué Vemos",
+  title: "QuéVer",
   description: "Decidid qué peli o serie ver esta noche, desde el sofá.",
 };
 
