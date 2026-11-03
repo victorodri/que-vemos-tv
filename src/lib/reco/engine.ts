@@ -61,9 +61,11 @@ export const TUNING = {
   becauseMinVotes: { movie: 50, tv: 40 } as Record<MediaType, number>, // más alto hunde a los documentales (pocos votos)
   /**
    * Penalización por indicio romántico en series si el perfil evita el romance (las series no tienen ese género):
-   * palabra clave o sinopsis romántica = 1, palabra clave o sinopsis de drama juvenil = 0,5; máximo 3.
+   * palabra clave romántica = 1, sinopsis claramente romántica = 2 (o 1 si solo lo sugiere), palabra clave o sinopsis
+   * de drama juvenil = 0,5; máximo 3. Desde `romanceExclude` indicios se descarta, como las pelis con género Romance.
    */
   romanceKwPenalty: 0.12,
+  romanceExclude: 2,
   /** Afinidad mínima con un título que le gustó para explicar «Porque te gustó X» (explicación por ítems). */
   itemExplainMin: 0.5,
   /** Pareja: lo que uno de los dos ya vio no se bloquea (puede apetecer verlo juntos), pero baja en la lista. */
@@ -107,13 +109,15 @@ const ROMANCE_KW = /^(romance|romantic|romantic comedy|love|first love|forbidden
 // El grafo de TMDB lleva de un drama de prestigio a dramas juveniles casi siempre románticos (Pequeñas mentirosas, Tell Me Lies…).
 const TEEN_KW = /^(teen drama|teenager|high school|college|university|based on young adult novel|young adult|coming of age|teen)$/i;
 // TMDB etiqueta mal muchas series: la sinopsis en español delata el romance que no dicen las palabras clave.
-const ROMANCE_TEXT = /\b(romance|romances|romántic\w*|enamor\w*|amor(es|os[oa]s?)?|relaci(ó|o)n(es)? (tóxicas?|sentimental(es)?|amoros[oa]s?)|triángulo amoroso|su relación|novi[oa]s?|seducción|matrimonio de conveniencia)(?![\wáéíóúñ])/i;
+// Frases que dicen claramente que es una historia romántica (2) y otras que solo lo sugieren (1).
+const ROMANCE_TEXT_STRONG = /\b(romance|romances|romántic\w*|enamor\w*|relaci(ó|o)n(es)? (sentimental(es)?|amoros[oa]s?)|triángulo amoroso|historias? de amor)(?![\wáéíóúñ])/i;
+const ROMANCE_TEXT = /\b(amor(es|os[oa]s?)?|relaci(ó|o)n(es)? tóxicas?|su relación|novi[oa]s?|seducción|matrimonio de conveniencia)(?![\wáéíóúñ])/i;
 const TEEN_TEXT = /\b(universidad|universitari\w*|instituto|adolescen\w*|campus)(?![\wáéíóúñ])/i;
 
 /** Indicios de romance en una serie (0..3), para quien lo evita. */
 function romanceHints(feat: ItemFeatures): number {
   const kws = Object.entries(feat.labels).filter(([k]) => k.startsWith("k:")).map(([, l]) => l);
-  const n = kws.filter((l) => ROMANCE_KW.test(l)).length + 0.5 * kws.filter((l) => TEEN_KW.test(l)).length + (ROMANCE_TEXT.test(feat.overview) ? 1 : 0) + (TEEN_TEXT.test(feat.overview) ? 0.5 : 0);
+  const n = kws.filter((l) => ROMANCE_KW.test(l)).length + 0.5 * kws.filter((l) => TEEN_KW.test(l)).length + (ROMANCE_TEXT_STRONG.test(feat.overview) ? 2 : ROMANCE_TEXT.test(feat.overview) ? 1 : 0) + (TEEN_TEXT.test(feat.overview) ? 0.5 : 0);
   return Math.min(3, n);
 }
 
@@ -384,6 +388,7 @@ async function rank(cands: Candidate[], taste: TasteModel, prefs: Prefs | null, 
     const q = bayesQuality(c.raw.vote_average, c.raw.vote_count, releaseDate(c.raw));
     // Las series no tienen género «Romance»: si se evita, se mira en sus temas.
     const romance = avoidRomance && c.type === "tv" && feat ? romanceHints(feat) : 0;
+    if (romance >= TUNING.romanceExclude) return;
     const score =
       -romance * TUNING.romanceKwPenalty +
       (coldStart ? 0.35 : TUNING.wAffinity) * aff +
@@ -550,7 +555,7 @@ export async function getShelves(profileId: string, type: MediaType | "all"): Pr
   const taste = await getTaste(profileId);
   const types: MediaType[] = type === "all" ? (profile.prefs?.types ?? ["movie", "tv"]) : [type];
   // La clave depende del contenido del modelo (no de cuándo se calculó): reentrenar sin cambios no invalida.
-  const cacheKey = `shelves:v5:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
+  const cacheKey = `shelves:v6:${profileId}:${types.join("+")}:${hashOf([taste.w, taste.blocked, taste.anchors, profile.platforms])}`;
   const cached = await kvGet<Shelf[]>(cacheKey).catch(() => null);
   if (cached) return cached;
 
