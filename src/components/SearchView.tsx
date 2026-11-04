@@ -6,6 +6,7 @@ import type { Filters, Meta, Title } from "@/lib/types";
 import { FiltersPanel } from "./FiltersPanel";
 import { useProfile } from "./profileContext";
 import { TitleGrid } from "./TitleGrid";
+import { TvTextField } from "./TvKeyboard";
 import { useTitles } from "./useTitles";
 
 export function SearchView({
@@ -38,14 +39,16 @@ export function SearchView({
           (document.activeElement as HTMLElement | null)?.blur?.();
         }}
       >
-        <input
+        {/* En la tele abre el teclado en pantalla; «Buscar» del teclado lanza la búsqueda. */}
+        <TvTextField
           type="search"
           className="search-input"
           placeholder={filters.type === "movie" ? "Buscar película…" : "Buscar serie…"}
+          title={filters.type === "movie" ? "Buscar película" : "Buscar serie"}
+          doneLabel="Buscar"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          enterKeyHint="search"
-          autoComplete="off"
+          onChange={setDraft}
+          onSubmit={(q) => onFilters({ ...filters, query: q })}
         />
         <button className="btn btn--primary" type="submit">
           Buscar

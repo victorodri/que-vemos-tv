@@ -108,9 +108,24 @@ function vertical(from: Box, dir: "up" | "down", all: Box[]): HTMLElement | null
       best = b;
     }
   }
+  // Grupo con entrada fija (data-nav-enter): al llegar desde fuera se entra por su elemento principal
+  // (data-nav-default), nunca por un botón secundario o peligroso (🚫) que quede más cerca.
+  const group = best.el.closest("[data-nav-enter]");
+  if (group && !group.contains(from.el)) {
+    const def = group.querySelector<HTMLElement>("[data-nav-default]");
+    if (def && all.some((b) => b.el === def)) return def;
+  }
   const row = rowOf(best.el);
   const remembered = row ? lastInRow.get(row) : undefined;
   if (remembered && remembered !== from.el && line.some((b) => b.el === remembered)) return remembered;
+  // Estantería con scroll propio a la que se entra por primera vez: por su primera tarjeta visible, como en las apps
+  // de TV (cada fila empieza por la izquierda), no por la columna de la fila de partida, que dejaba el foco a media fila.
+  const strip = best.el.closest(".shelf-row");
+  if (strip && strip !== rowOf(from.el)) {
+    const left = strip.getBoundingClientRect().left - 2;
+    const first = line.find((b) => strip.contains(b.el) && b.r.left >= left);
+    if (first) return first.el;
+  }
   return best.el;
 }
 
@@ -128,6 +143,23 @@ export function focusables(root: ParentNode): HTMLElement[] {
 
 const animations = new Map<Element | Window, number>();
 const latest = new Map<Element | Window, symbol>();
+/** Destino de cada desplazamiento en curso, para poder terminarlo de golpe. */
+const finals = new Map<Element | Window, () => void>();
+
+/**
+ * Termina al instante los desplazamientos animados en curso. Se llama antes de medir posiciones en cada pulsación:
+ * con la flecha mantenida (o una tele lenta) la siguiente pulsación llegaba a mitad de animación y medía un
+ * fotograma intermedio; un elemento aún bajo la cabecera fija no tenía nada «encima» y el foco se quedaba atascado.
+ */
+function settleScroll() {
+  for (const [key, finish] of finals) {
+    const id = animations.get(key);
+    if (id !== undefined) cancelAnimationFrame(id);
+    animations.delete(key);
+    finish();
+  }
+  finals.clear();
+}
 const reduceMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function animateScroll(target: Element | Window, axis: "x" | "y", to: number) {
@@ -140,6 +172,8 @@ function animateScroll(target: Element | Window, axis: "x" | "y", to: number) {
   const key = target;
   const prev = animations.get(key);
   if (prev) cancelAnimationFrame(prev);
+  animations.delete(key);
+  finals.delete(key);
   const from = get();
   if (Math.abs(to - from) < 1) return;
   if (reduceMotion()) return set(to);
@@ -149,18 +183,39 @@ function animateScroll(target: Element | Window, axis: "x" | "y", to: number) {
     const k = Math.min(1, (t - t0) / dur);
     set(from + (to - from) * (1 - Math.pow(1 - k, 3)));
     if (k < 1) animations.set(key, requestAnimationFrame(step));
-    else animations.delete(key);
+    else {
+      animations.delete(key);
+      finals.delete(key);
+    }
   };
   const token = Symbol();
   latest.set(key, token);
+  finals.set(key, () => set(to));
   animations.set(key, requestAnimationFrame(step));
   // Si no hay fotogramas (pestaña en segundo plano, tele saturada), se coloca igualmente en su sitio.
   setTimeout(() => {
     if (latest.get(key) !== token || animations.get(key) === undefined) return;
     cancelAnimationFrame(animations.get(key)!);
     animations.delete(key);
+    finals.delete(key);
     set(to);
   }, dur + 80);
+}
+
+/** Olvida dónde estabas en la vista visible: al volver a bajar desde el menú se entra por su elemento principal. */
+export function forgetViewFocus() {
+  const view = document.querySelector("main .tab-view:not([hidden])");
+  if (view) lastInView.delete(view);
+}
+
+/** Sube la página al principio al instante, cancelando cualquier desplazamiento animado que la volvería a bajar. */
+export function scrollPageTop() {
+  const id = animations.get(window);
+  if (id !== undefined) cancelAnimationFrame(id);
+  animations.delete(window);
+  finals.delete(window);
+  latest.delete(window);
+  window.scrollTo({ top: 0 });
 }
 
 /** Contenedor con scroll propio más cercano en un eje (fila de tarjetas, ficha modal…), o la ventana. */
@@ -255,6 +310,32 @@ export function focusLastInView(): boolean {
   return true;
 }
 
+/**
+ * Lleva el foco al contenido de la vista visible: a donde estabas en ella o, si no, a su elemento principal.
+ * Devuelve false si la vista aún no tiene nada enfocable (cargando).
+ */
+export function focusView(): boolean {
+  const view = document.querySelector<HTMLElement>("main .tab-view:not([hidden])");
+  if (!view) return false;
+  const back = lastInView.get(view);
+  const el = back && back.isConnected && back.getBoundingClientRect().height > 0 ? back : (visibleAutofocus(view) ?? focusables(view)[0]);
+  if (!el) return false;
+  focusEl(el);
+  return true;
+}
+
+/**
+ * Si el elemento enfocado acaba de desaparecer (el foco ha caído en <body>), lo devuelve a lo más cercano a donde
+ * estaba. Para llamarlo después de quitar del DOM el botón que se acaba de pulsar.
+ */
+export function recoverFocus() {
+  const a = document.activeElement;
+  if (a && a !== document.body && (a as HTMLElement).getBoundingClientRect().height > 0) return;
+  const near = nearestTo(lastRect, boxes());
+  if (near) focusEl(near);
+  else focusFirst();
+}
+
 /** Si la última interacción fue táctil o con ratón (no con el mando ni el teclado). */
 export let lastInputPointer = false;
 if (typeof window !== "undefined") {
@@ -288,6 +369,23 @@ export function runBack(general: () => void) {
 }
 
 let lastMove = 0;
+/** Posición en pantalla del último elemento enfocado, para recuperar el foco si ese elemento desaparece. */
+let lastRect: DOMRect | null = null;
+
+function nearestTo(r: DOMRect | null, all: Box[]): HTMLElement | null {
+  if (!r) return null;
+  let best: HTMLElement | null = null;
+  let bestD = Infinity;
+  for (const b of all) {
+    if (inHeader(b.el)) continue;
+    const d = Math.hypot(cx(b.r) - cx(r), b.r.top + b.r.height / 2 - (r.top + r.height / 2));
+    if (d < bestD) {
+      bestD = d;
+      best = b.el;
+    }
+  }
+  return best;
+}
 
 export function useSpatialNav(onBack: () => void) {
   const backRef = useRef(onBack);
@@ -302,6 +400,11 @@ export function useSpatialNav(onBack: () => void) {
     };
     const onKey = (e: KeyboardEvent) => {
       const active = document.activeElement;
+      // También con OK: si ese botón desaparece al pulsarlo, la siguiente flecha recupera el foco en su sitio.
+      if (active instanceof HTMLElement && active !== document.body) {
+        const r = active.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) lastRect = r;
+      }
       if (e.key === "Escape" || e.key === "GoBack" || e.key === "BrowserBack" || (e.key === "Backspace" && !isTextInput(active))) {
         e.preventDefault();
         runBack(backRef.current);
@@ -321,10 +424,16 @@ export function useSpatialNav(onBack: () => void) {
       const now = performance.now();
       if (e.repeat && now - lastMove < 55) return;
       lastMove = now;
+      settleScroll();
       const all = boxes();
       const from = active instanceof HTMLElement ? all.find((b) => b.el === active) : undefined;
       const current = from?.el ?? null;
-      if (!current || !from) return focusFirst();
+      if (!current || !from) {
+        // El elemento enfocado ha desaparecido (encuesta respondida, título descartado…): se recupera el foco en lo
+        // más cercano a donde estaba, no arriba del todo.
+        const near = nearestTo(lastRect, all);
+        return near ? focusEl(near) : focusFirst();
+      }
       // Al bajar desde la barra de pestañas se entra por el elemento principal de la vista (el de data-autofocus),
       // no por el que quede justo debajo de la pestaña: así «abajo» siempre lleva al mismo sitio.
       if (dir === "down" && current.closest("[data-nav-header]")) {
@@ -338,7 +447,11 @@ export function useSpatialNav(onBack: () => void) {
           return focusEl(entry);
         }
       }
-      const target = dir === "left" || dir === "right" ? horizontal(from, dir, all) : vertical(from, dir, all);
+      let target = dir === "left" || dir === "right" ? horizontal(from, dir, all) : vertical(from, dir, all);
+      // Arriba del todo de una vista, «arriba» siempre lleva al menú (a la pestaña actual).
+      if (!target && dir === "up" && !inHeader(current) && !current.closest("[data-nav-modal]")) {
+        target = document.querySelector<HTMLElement>('[data-nav-header] .tab[aria-current="page"]');
+      }
       if (!target) return;
       if (dir === "left" || dir === "right") stickyX = null;
       else stickyX ??= cx(from.r);

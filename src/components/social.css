@@ -250,6 +250,10 @@
 .spot-rate-btn[aria-pressed="true"] {
   background: var(--accent);
 }
+/* Pulsado y enfocado: amarillo sobre amarillo no se ve; hueco oscuro antes del anillo. */
+.spot-rate-btn[aria-pressed="true"]:focus {
+  box-shadow: 0 0 0 0.16rem var(--bg), 0 0 0 0.36rem var(--accent);
+}
 
 /* Miniaturas: el foco cambia el destacado */
 .spot-strip {
@@ -298,7 +302,7 @@
   right: 0.45rem;
   bottom: 0.3rem;
   z-index: 1;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   font-weight: 700;
   text-align: left;
   white-space: nowrap;

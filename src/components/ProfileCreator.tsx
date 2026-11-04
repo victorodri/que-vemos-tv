@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { sendJSON } from "@/lib/client";
 import type { PublicProfile } from "@/lib/profiles";
 import { PinPad } from "./PinPad";
+import { TvTextField } from "./TvKeyboard";
 import { focusFirst, useBackHandler } from "./spatialNav";
 
 type Step = "kind" | "name" | "members" | "avatar" | "pin";
@@ -34,7 +35,9 @@ export function ProfileCreator({
   const singles = profiles.filter((p) => p.kind === "single");
 
   useEffect(() => {
-    requestAnimationFrame(focusFirst);
+    // setTimeout: en algunos WebView de tele el rAF llega tarde y el foco se quedaba en <body>.
+    const t = setTimeout(focusFirst, 0);
+    return () => clearTimeout(t);
   }, [step]);
 
   const nameError = (n: string) =>
@@ -144,17 +147,22 @@ export function ProfileCreator({
               else go(1);
             }}
           >
-            <input
+            <TvTextField
               className="name-input"
               value={name}
               maxLength={30}
-              autoComplete="off"
               placeholder={kind === "couple" ? "Nombre de la pareja" : "Tu nombre"}
-              onChange={(e) => {
-                setName(e.target.value);
+              doneLabel="Siguiente"
+              onChange={(v) => {
+                setName(v);
                 setError(null);
               }}
-              data-autofocus
+              onSubmit={(v) => {
+                const err = nameError(v);
+                if (err) setError(err);
+                else go(1);
+              }}
+              autoFocus
             />
             {error && <p className="error">{error}</p>}
           </form>

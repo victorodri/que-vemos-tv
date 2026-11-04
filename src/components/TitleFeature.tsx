@@ -79,14 +79,15 @@ export function FeedbackButtons({ title, onRated }: { title: Title | SavedTitle;
 }
 
 /** Botones "Quiero verla" y "Ya vista" del perfil activo. */
-export function ProfileActions({ title, onSeen }: { title: Title | SavedTitle; onSeen?: (nowSeen: boolean) => void }) {
+export function ProfileActions({ title, onSeen, primary }: { title: Title | SavedTitle; onSeen?: (nowSeen: boolean) => void; primary?: boolean }) {
   const profile = useProfile();
   const inList = profile.inList(title);
   const seen = profile.isSeen(title);
   const pareja = profile.plural;
   return (
     <>
-      <button className="btn" onClick={() => profile.toggleList(title)}>
+      {/* `primary`: es la acción principal de la ficha y donde empieza el foco (abrir y guardar = OK, OK). */}
+      <button className={primary ? "btn btn--primary" : "btn"} data-autofocus={primary || undefined} onClick={() => profile.toggleList(title)}>
         {inList ? "✓ En mi lista (quitar)" : "＋ Quiero verla"}
       </button>
       <button
@@ -124,10 +125,10 @@ export function DetailModal({ target, onClose }: { target: { type: MediaType; id
       {shown ? (
         <div className="modal-body">
           <TitleFeature title={shown}>
-            <button className="btn btn--primary" data-autofocus onClick={onClose}>
+            <ProfileActions title={shown} primary />
+            <button className="btn" onClick={onClose}>
               ← Volver
             </button>
-            <ProfileActions title={shown} />
             <FeedbackButtons title={shown} />
             {error && <p className="error">{error}</p>}
           </TitleFeature>

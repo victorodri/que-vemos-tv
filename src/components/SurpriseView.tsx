@@ -5,7 +5,7 @@ import { getJSON, hashOf } from "@/lib/client";
 import { titleKey, type Filters, type Meta, type TitleDetail } from "@/lib/types";
 import { FiltersPanel } from "./FiltersPanel";
 import { useProfile } from "./profileContext";
-import { focusEl, focusFirst, useBackHandler } from "./spatialNav";
+import { focusEl, focusFirst, lastInputPointer, useBackHandler } from "./spatialNav";
 import { FeedbackButtons, ProfileActions, TitleFeature } from "./TitleFeature";
 
 type SurpriseItem = TitleDetail & { reason?: string; arm?: string };
@@ -26,6 +26,7 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
   const inflight = useRef<Promise<void> | null>(null);
   const generation = useRef(0);
   const againRef = useRef<HTMLButtonElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
   const filterKey = filtersToParams({ ...filters, query: "" }).toString();
   const tasteKey = hashOf([profile.data.platforms, profile.data.prefs]);
   const filtersBtn = useRef<HTMLButtonElement>(null);
@@ -76,7 +77,8 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
     return p;
   }
 
-  async function next() {
+  /** `auto`: la primera propuesta al entrar; solo se lleva el foco si sigues en esta pestaña. */
+  async function next(auto = false) {
     setMessage(null);
     if (!queue.current.length) {
       setLoading(true);
@@ -88,12 +90,23 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
     const it = queue.current.shift();
     if (it) {
       setItem(it);
-      requestAnimationFrame(() => focusEl(againRef.current));
+      requestAnimationFrame(() => {
+        const a = document.activeElement;
+        const here = !a || a === document.body || !!viewRef.current?.contains(a) || (a as HTMLElement).matches('.tab[aria-current="page"]');
+        if (!auto || (here && !lastInputPointer && !viewRef.current?.closest("[hidden]"))) focusEl(againRef.current);
+      });
     } else if (!message) {
       setItem(null);
     }
     if (queue.current.length < REFILL_BELOW) void refill();
   }
+
+  // Al entrar en la pestaña ya hay una propuesta en pantalla: «Sorpréndeme» no necesita una pulsación más.
+  useEffect(() => {
+    const t = setTimeout(() => void next(true), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtersButton = (
     <button className="btn" ref={filtersBtn} onClick={() => setShowFilters(true)} aria-expanded={showFilters}>
@@ -102,10 +115,10 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
   );
 
   return (
-    <div className="view view--surprise">
+    <div className="view view--surprise" ref={viewRef}>
       {!item && (
         <div className="surprise-bar">
-          <button className="btn btn--primary btn--big" data-autofocus onClick={next} disabled={loading}>
+          <button className="btn btn--primary btn--big" data-autofocus onClick={() => !loading && next()} aria-disabled={loading || undefined}>
             {loading ? "Buscando…" : "🎲 ¡Sorpréndeme!"}
           </button>
           {filtersButton}
@@ -119,10 +132,12 @@ export function SurpriseView({ filters, onFilters, meta }: { filters: Filters; o
             ref={againRef}
             data-autofocus
             onClick={() => {
+              if (loading) return;
               profile.track(item, "skip");
               next();
             }}
-            disabled={loading}
+            // aria-disabled y no disabled: un botón deshabilitado pierde el foco y el mando se quedaba sin nada enfocado.
+            aria-disabled={loading || undefined}
           >
             {loading ? "Buscando…" : "🎲 Otra"}
           </button>

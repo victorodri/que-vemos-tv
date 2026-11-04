@@ -5,6 +5,7 @@ import type { Survey } from "@/lib/reco/engagement";
 import type { Signal } from "@/lib/reco/types";
 import { parseTitleKey } from "@/lib/types";
 import { useProfile } from "./profileContext";
+import { lastInputPointer, recoverFocus } from "./spatialNav";
 
 /**
  * Micro-encuesta de «Para ti»: una sola pregunta, de vez en cuando (el servidor decide cuándo y cuál, ver
@@ -40,6 +41,8 @@ export function SurveyCard({ session, onChanged }: { session: string; onChanged:
       profile.rate({ type, id, title: survey.item.title, poster: survey.item.poster, year: null, rating: null, overview: "" }, a as Signal);
     }
     setSurvey(null);
+    // Los botones desaparecen con la respuesta: el foco del mando pasa a lo más cercano (la primera estantería).
+    if (!lastInputPointer) requestAnimationFrame(recoverFocus);
     if (a !== "dismiss") {
       setThanks(true);
       setTimeout(() => setThanks(false), 2500);

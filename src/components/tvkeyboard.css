@@ -1,0 +1,127 @@
+/* Teclado en pantalla para el mando (TvKeyboard.tsx). Panel abajo, sin desenfoques: la GPU de Fire TV es justa. */
+.tvkb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(5, 6, 9, 0.82);
+  padding: var(--safe-y) var(--safe-x);
+}
+.tvkb {
+  width: min(100%, 52rem);
+  padding: 1rem 1.2rem 0.8rem;
+  border-radius: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+}
+.tvkb-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.tvkb-display {
+  display: flex;
+  align-items: center;
+  min-height: 2.6rem;
+  padding: 0.4rem 0.8rem;
+  margin-bottom: 0.8rem;
+  border-radius: 0.6rem;
+  background: var(--bg);
+  font-size: 1.4rem;
+  font-weight: 700;
+  white-space: pre;
+  overflow: hidden;
+}
+.tvkb-placeholder {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 1rem;
+}
+.tvkb-caret {
+  width: 0.12rem;
+  height: 1.5rem;
+  margin-left: 0.1rem;
+  background: var(--accent);
+  animation: tvkb-blink 1s steps(1) infinite;
+}
+@keyframes tvkb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.tvkb-grid {
+  display: grid;
+  gap: 0.35rem;
+}
+.tvkb-row {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+.tvkb-row--actions {
+  grid-template-columns: 1.2fr 1.2fr 1fr 1fr 1.4fr;
+  margin-top: 0.2rem;
+}
+.tvkb-key {
+  min-height: 2.4rem;
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.tvkb-key--wide {
+  font-size: 0.85rem;
+}
+.tvkb-key--done {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+.tvkb-key[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--bg);
+}
+.tvkb-key:disabled {
+  opacity: 0.4;
+}
+.tvkb-key:focus {
+  outline: none;
+  box-shadow: var(--focus);
+  background: var(--text);
+  color: var(--bg);
+}
+.tvkb-key--done:focus {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.tvkb-hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Campo que abre el teclado en la tele: parece un campo de texto. */
+.tv-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  text-align: left;
+  cursor: text;
+}
+.tv-field-placeholder {
+  color: var(--muted);
+}
+.tv-field-value {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tv-field-icon {
+  color: var(--muted);
+  flex: none;
+}

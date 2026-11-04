@@ -62,6 +62,8 @@ Lee primero `src/lib/reco/types.ts`: describe el diseño y el contrato de las AP
 
 ## Mando, sonido y Atrás
 - Atrás: ficha → se cierra; otra pestaña → «Para ti»; «Para ti» → aviso y, con una segunda pulsación, cierra la app (`window.QueVemosAndroid.exit()`, puente del APK ≥ 1.1). El APK delega Atrás en `window.__queVemosBack()`. Cambiar de perfil solo desde el avatar.
+- Escribir en la tele: `TvKeyboard.tsx`. En la tele (`useIsTv`: user agent del APK `QueVemosTV`, Fire TV `AFTxx`, Android TV, Smart TV; `?tv=1` / `?tv=0` lo fuerza) los campos de texto (`TvTextField`) son un botón que abre un teclado en pantalla propio que se recorre con flechas y OK; el teclado del sistema no se abre de forma fiable desde el WebView. El APK ≥ 1.4 traduce OK a Enter al momento.
+- Entrada en grupos: `data-nav-enter` en un contenedor y `data-nav-default` en su botón principal (al llegar desde fuera se entra por él, p. ej. «Ver ficha» y no 🚫). Atrás en «Para ti» desde abajo sube arriba antes de avisar de salir.
 - `src/lib/sound.ts`: sonidos sutiles con Web Audio al mover el foco y al pulsar OK (desactivables en Ajustes). `HeartBurst.ts`: explosión de corazones al marcar «Me encanta».
 - Las entradas de historial copian las claves internas de Next (`historyState()` en App.tsx); sin ellas, Atrás recarga la página.
 

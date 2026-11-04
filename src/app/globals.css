@@ -61,7 +61,8 @@ button {
   background: none;
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.6;
   cursor: default;
 }
@@ -136,7 +137,7 @@ input:focus {
   gap: 0.35rem;
   padding: 0.38rem 0.7rem;
   border-radius: 999px;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
@@ -164,6 +165,7 @@ input:focus {
 }
 .tab:focus {
   color: var(--text);
+  background: var(--surface-2);
   transform: scale(1.06);
 }
 
@@ -284,7 +286,8 @@ input:focus {
 }
 /* Amarillo sobre amarillo no se ve: el foco del botón principal lleva un hueco oscuro antes del anillo. */
 .btn--primary:focus {
-  box-shadow: 0 0 0 0.16rem var(--bg), 0 0 0 0.36rem var(--accent), 0 0 1.4rem rgba(255, 200, 61, 0.45);
+  /* Sin halo difuminado (caro en la GPU de Fire TV): hueco oscuro + anillo sólido. */
+  box-shadow: 0 0 0 0.16rem var(--bg), 0 0 0 0.36rem var(--accent);
 }
 .btn--big {
   font-size: 1.2rem;
@@ -774,7 +777,7 @@ input:focus {
 .card-reason,
 .poster-card-reason {
   color: var(--accent);
-  font-size: 0.78rem;
+  font-size: 0.84rem;
   font-weight: 600;
 }
 .card-reason {
@@ -846,7 +849,7 @@ input:focus {
 }
 .poster-card-title {
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -856,7 +859,7 @@ input:focus {
   display: flex;
   gap: 0.5rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 .poster-card-reason {
   display: -webkit-box;
@@ -902,9 +905,10 @@ input:focus {
   transform: scale(1.07);
   z-index: 1;
 }
+/* Elegido = verde: el amarillo es solo del foco, para que nunca se confundan. */
 .seed[data-signal="like"],
 .seed[data-signal="love"] {
-  border-color: var(--accent);
+  border-color: #3ddc97;
 }
 .seed[data-signal="dislike"] {
   border-color: var(--danger);
@@ -1003,6 +1007,7 @@ input:focus {
   }
   .tab:focus {
     transform: none;
+    background: transparent;
   }
   .tab-icon {
     display: block;

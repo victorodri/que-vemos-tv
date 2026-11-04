@@ -19,7 +19,7 @@ import { ProfileContext, type ProfileApi } from "./profileContext";
 import { SearchView } from "./SearchView";
 import { SeenView } from "./SeenView";
 import { SettingsView } from "./SettingsView";
-import { focusEl, focusFirst, focusLastInView, focusables, lastInputPointer, runBack, useSpatialNav } from "./spatialNav";
+import { focusEl, focusFirst, focusLastInView, focusView, focusables, lastInputPointer, forgetViewFocus, runBack, scrollPageTop, useSpatialNav } from "./spatialNav";
 import { SurpriseView } from "./SurpriseView";
 import { DetailModal } from "./TitleFeature";
 
@@ -177,6 +177,17 @@ export default function App() {
       goTab("foryou");
       return;
     }
+    // En «Para ti», si estás bajando por las estanterías, Atrás primero te sube al principio y al menú (como en
+    // Netflix o YouTube); solo desde arriba avisa de que una segunda pulsación cierra la app.
+    const a = document.activeElement as HTMLElement | null;
+    const atTop = window.scrollY < 40 && (!a || a === document.body || !!a.closest("[data-nav-header]"));
+    if (cur.profile && !atTop && !lastInputPointer) {
+      scrollPageTop();
+      forgetViewFocus();
+      const tab = document.querySelector<HTMLElement>('[data-nav-header] .tab[aria-current="page"]');
+      if (tab) focusEl(tab);
+      return;
+    }
     if (armExit()) window.QueVemosAndroid?.exit?.();
   };
   // Tras volver a «Para ti» con Atrás (el cambio llega en un popstate asíncrono): el foco vuelve a la tarjeta en la
@@ -188,6 +199,15 @@ export default function App() {
     setTimeout(() => {
       if (lastInputPointer || !focusLastInView()) focusFirst();
     }, 0);
+  }, [nav.tab]);
+  // Tras OK en una pestaña: el foco entra en la vista en cuanto está pintada (si aún carga, se queda en la pestaña).
+  const focusViewAfterNav = useRef(false);
+  const enterView = () => {
+    focusViewAfterNav.current = false;
+    setTimeout(() => focusView(), 0);
+  };
+  useEffect(() => {
+    if (focusViewAfterNav.current) enterView();
   }, [nav.tab]);
   const backRef = useRef(back);
   backRef.current = back;
@@ -565,7 +585,18 @@ export default function App() {
         <Logo />
         <nav className="tabs">
           {TABS.map((t) => (
-            <button key={t.id} className="tab" aria-current={nav.tab === t.id ? "page" : undefined} data-autofocus={nav.tab === t.id || undefined} onClick={() => goTab(t.id)}>
+            <button
+              key={t.id}
+              className="tab"
+              aria-current={nav.tab === t.id ? "page" : undefined}
+              data-autofocus={nav.tab === t.id || undefined}
+              onClick={() => {
+                // Con el mando, OK en una pestaña lleva el foco a su contenido (una pulsación menos para todo).
+                if (!lastInputPointer) focusViewAfterNav.current = true;
+                if (t.id === navRef.current.tab && !navRef.current.detail) enterView();
+                else goTab(t.id);
+              }}
+            >
               <span className="tab-icon" aria-hidden="true">
                 {t.icon}
               </span>

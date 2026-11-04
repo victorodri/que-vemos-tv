@@ -6,7 +6,7 @@ import type { Signal } from "@/lib/reco/types";
 import { titleKey, type Title } from "@/lib/types";
 import { playMove } from "@/lib/sound";
 import { useProfile } from "./profileContext";
-import { focusEl } from "./spatialNav";
+import { focusEl, lastInputPointer, recoverFocus } from "./spatialNav";
 import { SIGNALS } from "./TitleFeature";
 import { SIGNAL_BADGE } from "./TitleCard";
 import "./social.css";
@@ -49,6 +49,8 @@ export function NewReleasesSpotlight({ onOpen }: { onOpen: (t: Title) => void })
   const rate = (s: Signal) => {
     const wasSame = rated === s;
     profile.rate(it, s);
+    // Si era el último por valorar, el destacado desaparece: el foco no debe quedarse en el vacío.
+    if (!lastInputPointer) requestAnimationFrame(recoverFocus);
     if (wasSame) return;
     // Tras valorar, pasa al siguiente sin valorar (el foco se queda en el mismo botón: se puede ir encadenando).
     if (advance.current) clearTimeout(advance.current);
@@ -105,8 +107,8 @@ export function NewReleasesSpotlight({ onOpen }: { onOpen: (t: Title) => void })
             </p>
           )}
           {it.overview && <p className="spot-overview">{it.overview}</p>}
-          <div className="spot-actions">
-            <button className="btn btn--primary" onClick={() => onOpen(it)}>
+          <div className="spot-actions" data-nav-enter>
+            <button className="btn btn--primary" data-nav-default onClick={() => onOpen(it)}>
               Ver ficha
             </button>
             <div className="spot-rate" role="group" aria-label={`Valora ${it.title}`}>

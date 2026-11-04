@@ -7,6 +7,7 @@ import { titleKey, type Title } from "@/lib/types";
 import { NewReleasesSpotlight } from "./NewReleasesSpotlight";
 import { useProfile } from "./profileContext";
 import { SocialCountsContext, SocialPulse, socialLabel, useActivity, useSocialCount } from "./SocialPulse";
+import { focusEl, lastInputPointer } from "./spatialNav";
 import { SurveyCard } from "./SurveyCard";
 import { Rating, SIGNAL_BADGE } from "./TitleCard";
 
@@ -103,6 +104,20 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
     }))
     .filter((s) => s.items.length > 0);
 
+  // Al abrir la app el foco empieza en la primera recomendación (como Netflix o YouTube), no en el menú: una
+  // pulsación de OK y ya estás en la ficha. Solo la primera vez y si no te has movido mientras cargaba.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const autoFocused = useRef(false);
+  const hasShelves = visible.length > 0;
+  useEffect(() => {
+    if (!hasShelves || autoFocused.current) return;
+    autoFocused.current = true;
+    const a = document.activeElement;
+    const idle = !a || a === document.body || (a as HTMLElement).matches('.tab[aria-current="page"]');
+    if (!idle || lastInputPointer || window.scrollY > 10 || rootRef.current?.closest("[hidden]")) return;
+    requestAnimationFrame(() => focusEl(rootRef.current?.querySelector<HTMLElement>(".poster-card[data-autofocus]")));
+  }, [hasShelves]);
+
   const kinds: { id: Kind; label: string }[] = both
     ? [
         { id: "all", label: "Todo" },
@@ -113,7 +128,7 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
 
   return (
     <SocialCountsContext.Provider value={activity?.counts ?? {}}>
-      <div className="view">
+      <div className="view" ref={rootRef}>
         <div className="foryou-header">
           <div>
             <h2>{pareja ? "Para vosotros" : "Para ti"}</h2>
@@ -121,7 +136,7 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
           </div>
           <div className="chips">
             {kinds.map((k) => (
-              <button key={k.id} className="chip" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} data-autofocus={kind === k.id || undefined}>
+              <button key={k.id} className="chip" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} data-autofocus={(kind === k.id && !visible.length) || undefined}>
                 {k.label}
               </button>
             ))}
@@ -135,8 +150,6 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
         </div>
 
         {shelves !== null && <SurveyCard session={session} onChanged={() => setReload((n) => n + 1)} />}
-        <SocialPulse data={activity} onOpen={onOpen} plural={pareja} />
-        <NewReleasesSpotlight onOpen={onOpen} />
 
         {error && <p className="error">No se han podido cargar las recomendaciones: {error}</p>}
         {shelves === null && loading && <p className="loading">Preparando recomendaciones…</p>}
@@ -144,7 +157,14 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
           <p className="empty">Todavía no hay nada que encaje. Prueba a valorar algunos títulos o a cambiar tus gustos.</p>
         )}
 
-        {visible.map((shelf) => (
+        {/* «Lo mejor para ti» va justo debajo de la cabecera: es a lo que se llega con una sola pulsación (y donde
+            empieza el foco). La franja social y los estrenos, después. */}
+        {visible.slice(0, 1).map((shelf) => (
+          <ShelfSection key={shelf.id + shelf.title} shelf={shelf} onOpen={onOpen} main />
+        ))}
+        <SocialPulse data={activity} onOpen={onOpen} plural={pareja} />
+        <NewReleasesSpotlight onOpen={onOpen} />
+        {visible.slice(1).map((shelf) => (
           <ShelfSection key={shelf.id + shelf.title} shelf={shelf} onOpen={onOpen} />
         ))}
         {shelves !== null && loading && <p className="hint shelf-updating">Actualizando…</p>}
@@ -157,7 +177,7 @@ export function ForYouView({ onOpen, onRedo }: { onOpen: (t: Title) => void; onR
  * Una tira de «Para ti». Cuenta como vista cuando entra en pantalla (y los títulos que se ven en ella, también al
  * desplazarla): así se sabe qué tiras se ignoran y qué títulos han pasado ya demasiadas veces sin abrirse.
  */
-function ShelfSection({ shelf, onOpen }: { shelf: Shelf; onOpen: (t: Title) => void }) {
+function ShelfSection({ shelf, onOpen, main }: { shelf: Shelf; onOpen: (t: Title) => void; main?: boolean }) {
   const ref = useRef<HTMLElement>(null);
   const fam = shelf.key ?? shelf.id;
   useEffect(() => {
@@ -201,10 +221,11 @@ function ShelfSection({ shelf, onOpen }: { shelf: Shelf; onOpen: (t: Title) => v
     <section ref={ref} className="shelf" aria-label={shelf.title}>
       <h3 className="shelf-title">{shelf.title}</h3>
       <div className="shelf-row">
-        {shelf.items.map((item) => (
+        {shelf.items.map((item, i) => (
           <PosterCard
             key={titleKey(item)}
             item={item}
+            autofocus={main && i === 0}
             onOpen={() => {
               engage.setOrigin(fam);
               onOpen(item);
